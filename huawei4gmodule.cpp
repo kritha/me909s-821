@@ -42,128 +42,134 @@ void HUAWEI4GModule::showErrInfo(errInfo_t info)
 int HUAWEI4GModule::setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed)
 {
     int ret = 0;
-    struct termios options;
+    struct termios uartAttr[2];
     /*获取终端参数，成功返回零；失败返回非零，发生失败接口将设置errno错误标识*/
-    if(0 != tcgetattr(fd, &options))
+    if(0 != tcgetattr(fd, &uartAttr[0]))
     {
         ret = -EACCES;
         perror("tcgetattr failed.");
     }else
     {
-        bzero(&options,sizeof(options));
+        /* 先将新串口配置清0 */
+        bzero(&uartAttr[1], sizeof(struct termios));
+        /* CREAD 开启串行数据接收，CLOCAL并打开本地连接模式 */
+        uartAttr[1].c_cflag |= (CLOCAL|CREAD);
 
-        options.c_cflag|=(CLOCAL|CREAD);
-        options.c_cflag &= ~CSIZE;
+        //clear data bits field
+        uartAttr[1].c_cflag &= ~CSIZE;
 
+        //set data bits field
         switch(databits)
         {
         case 7:
-          options.c_cflag |= CS7;
+          uartAttr[1].c_cflag |= CS7;
           break;
         case 8:
-          options.c_cflag |= CS8;
+          uartAttr[1].c_cflag |= CS8;
           break;
         default:
             ret = -EINVAL;
             perror("Unsupported data bit argument.");
             break;
         }
+        /* 设置停止位*/
+        switch (stopbits)
+        {
+        case 1:
+            uartAttr[1].c_cflag &= ~CSTOPB;
+            break;
+        case 2:
+            uartAttr[1].c_cflag |= CSTOPB;
+            break;
+        default:
+            ret = -EINVAL;
+            perror("Unsupported stop bit argument.");
+        }
+
+        switch(parity)
+        {
+        case 'n':
+        case 'N':
+            uartAttr[1].c_iflag &= ~INPCK;     /* Enable parity checking */
+            uartAttr[1].c_cflag &= ~PARENB;   /* Clear parity enable */
+            break;
+        case 'o':
+            uartAttr[1].c_cflag |= PARENB;             /*开启奇偶校验 */
+            uartAttr[1].c_iflag |= (INPCK | ISTRIP);   /*INPCK打开输入奇偶校验；ISTRIP去除字符的第八个比特*/
+            uartAttr[1].c_cflag |= PARODD;             /*启用奇校验(默认为偶校验)*/
+            break;
+        case 'O':
+            uartAttr[1].c_cflag |= (PARODD | PARENB); /* 设置为奇效验*/
+            uartAttr[1].c_iflag |= INPCK;             /* Disnable parity checking */
+            break;
+        case 'e':
+            uartAttr[1].c_cflag |= PARENB;             /*开启奇偶校验 */
+            uartAttr[1].c_iflag |= ( INPCK | ISTRIP);  /*打开输入奇偶校验并去除字符第八个比特  */
+            uartAttr[1].c_cflag &= ~PARODD;            /*启用偶校验；  */
+            break;
+        case 'E':
+            uartAttr[1].c_cflag |= PARENB;     /* Enable parity */
+            uartAttr[1].c_cflag &= ~PARODD;   /* 转换为偶效验*/
+            uartAttr[1].c_iflag |= INPCK;       /* Disnable parity checking */
+            break;
+        case 'S':
+        case 's':  /*as no parity*/
+            uartAttr[1].c_cflag &= ~PARENB;
+            uartAttr[1].c_cflag &= ~CSTOPB;
+            break;
+        default:
+            ret = -EINVAL;
+            perror("Unsupported parity bit argument.");
+            break;
+        }
+        /* Set input parity option */
+        if (parity != 'n')
+            uartAttr[1].c_iflag |= INPCK;
+
+        /*设置波特率, default as B9600*/
+        switch(speed)
+        {
+        case 2400:
+            cfsetispeed(&uartAttr[1], B2400);    /*设置输入速度*/
+            cfsetospeed(&uartAttr[1], B2400);    /*设置输出速度*/
+            break;
+        case 4800:
+            cfsetispeed(&uartAttr[1], B4800);
+            cfsetospeed(&uartAttr[1], B4800);
+            break;
+        case 9600:
+            cfsetispeed(&uartAttr[1], B9600);
+            cfsetospeed(&uartAttr[1], B9600);
+            break;
+        case 115200:
+            cfsetispeed(&uartAttr[1], B115200);
+            cfsetospeed(&uartAttr[1], B115200);
+            break;
+        default:
+            cfsetispeed(&uartAttr[1], B9600);
+            cfsetospeed(&uartAttr[1], B9600);
+            break;
+        }
 
         if(!ret)
         {
-            switch(parity)
+            tcflush(fd, TCIFLUSH);
+            uartAttr[1].c_cc[VTIME] = 0; /* 设置超时0 seconds*/
+            uartAttr[1].c_cc[VMIN] = 0; /* Update the options and do it NOW */
+            ret = tcsetattr(fd, TCSANOW, &uartAttr[1]);
+            if(0 != ret)
             {
-            case 'n':
-            case 'N':
-                options.c_cflag &= ~PARENB;   /* Clear parity enable */
-                //options.c_iflag &= ~INPCK;     /* Enable parity checking */
-                break;
-            case 'o':
-            case 'O':
-                options.c_cflag |= PARENB;             /*开启奇偶校验 */
-                options.c_iflag |= (INPCK | ISTRIP);   /*INPCK打开输入奇偶校验；ISTRIP去除字符的第八个比特*/
-                options.c_cflag |= PARODD;             /*启用奇校验(默认为偶校验)*/
-                //options.c_cflag |= (PARODD | PARENB); /* 设置为奇效验*/
-                //options.c_iflag |= INPCK;             /* Disnable parity checking */
-                break;
-            case 'e':
-            case 'E':
-                options.c_cflag |= PARENB;             /*开启奇偶校验 */
-                options.c_iflag |= ( INPCK | ISTRIP);  /*打开输入奇偶校验并去除字符第八个比特  */
-                options.c_cflag &= ~PARODD;            /*启用偶校验；  */
-                //options.c_cflag |= PARENB;     /* Enable parity */
-                //options.c_cflag &= ~PARODD;   /* 转换为偶效验*/
-                //options.c_iflag |= INPCK;       /* Disnable parity checking */
-                break;
-            case 'S':
-            case 's':  /*as no parity*/
-                options.c_cflag &= ~PARENB;
-                options.c_cflag &= ~CSTOPB;
-                break;
-            default:
-                ret = -EINVAL;
-                perror("Unsupported parity bit argument.");
-            }
-            if(!ret)
-            {
-                switch(speed)        /*设置波特率 */
+                perror("tcsetattr newly failed.");
+                if(0 != tcsetattr(fd, TCSANOW, &uartAttr[0]))
                 {
-                case 2400:
-                    cfsetispeed(&options, B2400);    /*设置输入速度*/
-                    cfsetospeed(&options, B2400);    /*设置输出速度*/
-                    break;
-                case 4800:
-                    cfsetispeed(&options, B4800);
-                    cfsetospeed(&options, B4800);
-                    break;
-                case 9600:
-                    cfsetispeed(&options, B9600);
-                    cfsetospeed(&options, B9600);
-                    break;
-                case 115200:
-                    cfsetispeed(&options, B115200);
-                    cfsetospeed(&options, B115200);
-                    break;
-                default:
-                    cfsetispeed(&options, B9600);
-                    cfsetospeed(&options, B9600);
-                    break;
-                }
-                /* 设置停止位*/
-                switch (stopbits)
+                    perror("try to move back to oldly uart attr failed.");
+                }else
                 {
-                case 1:
-                    options.c_cflag &= ~CSTOPB;
-                    break;
-                case 2:
-                    options.c_cflag |= CSTOPB;
-                    break;
-                default:
-                    ret = -EINVAL;
-                    perror("Unsupported stop bit argument.");
-                }
-                if(!ret)
-                {
-                    /* Set input parity option */
-                    if (parity != 'n')
-                        options.c_iflag |= INPCK;
-                    tcflush(fd,TCIFLUSH);
-                    options.c_cc[VTIME] = 0; /* 设置超时0 seconds*/
-                    options.c_cc[VMIN] = 0; /* Update the options and do it NOW */
-                    if(0 != tcsetattr(fd,TCSANOW,&options))
-                    {
-                        ret = -EPERM;
-                        perror("tcsetattr failed.");
-                    }else
-                    {
-                        ;
-                        //options.c_lflag  &= ~(ICANON | ECHO | ECHOE | ISIG);  /*Input*/
-                        //options.c_lflag  &= ~( ECHO | ECHOE | ISIG);
-                        //options.c_oflag  &= ~OPOST;   /*Output*/
-                    }
+                    printf("try to move back to oldly uart attr success!\n");
                 }
             }
         }
+
     }
     return ret;
 }
@@ -246,7 +252,6 @@ int HUAWEI4GModule::communicationCheck(char* cmd, char* checkString)
 int HUAWEI4GModule::initSerialPortFor4GModule(int* fd, char* nodePath, int baudRate)
 {
     int ret = 0;
-    struct termios serialAttr;
 
     if(!fd || !nodePath)
     {
@@ -254,14 +259,14 @@ int HUAWEI4GModule::initSerialPortFor4GModule(int* fd, char* nodePath, int baudR
         ERR_RECORDER("init arguments failed.");
     }else
     {
-        *fd = open(nodePath, O_RDWR);
+        *fd = open(nodePath, O_RDWR|O_NOCTTY|O_NONBLOCK);
         if(*fd < 0)
         {
             ret = -errno;
             ERR_RECORDER("Unable to open device");
         }else
         {
-            ret = setSerialPortNodeProperty(fd, 8, 1, 'N', BOXV3_BAUDRATE_UART)
+            ret = setSerialPortNodeProperty(*fd, 8, 1, 'N', baudRate);
         }
     }
 
@@ -397,7 +402,7 @@ int HUAWEI4GModule::initUartAndTryCommunicateWith4GModule_ForTest(char* nodePath
         ERR_RECORDER("nodePath couldn't be NULL.");
     }else
     {
-        ret = initSerialPortFor4GModule(&fd, (char*)BOXV3_NODEPATH_4G, B9600);
+        ret = initSerialPortFor4GModule(&fd, (char*)BOXV3_NODEPATH_4G, BOXV3_BAUDRATE_UART);
         if(!ret)
         {
             ret = sendCMDofAT(fd, cmd, strlen(cmd));

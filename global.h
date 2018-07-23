@@ -4,7 +4,7 @@
 #include <string.h>
 #include <strings.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.1.4"
+#define BOXV3CHECKAPP_VERSION "V0.1.5"
 
 #define BOXV3_ERRMSGBUF_LEN 1024
 
