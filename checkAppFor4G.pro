@@ -8,8 +8,10 @@ CONFIG -= app_bundle
 TEMPLATE = app
 
 SOURCES += main.cpp \
-    huawei4gmodule.cpp
+    huawei4gmodule.cpp \
+    global.c
 
 HEADERS += \
-    huawei4gmodule.h
+    huawei4gmodule.h \
+    global.h
 
