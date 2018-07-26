@@ -3,8 +3,6 @@
 HUAWEI4GModule::HUAWEI4GModule()
 {
     fd = -1;
-    bzero(msg, BOXV3_MSG_LENGTH_4G);
-    bzero(networkServerVPN, VPNLENGTH);
 }
 
 void HUAWEI4GModule::showBuf(char *buf, int len)
@@ -174,124 +172,67 @@ int HUAWEI4GModule::setSerialPortNodeProperty(int fd, int databits, int stopbits
     return ret;
 }
 
-int HUAWEI4GModule::communicationCheck(char* cmd, char* checkString)
+
+int HUAWEI4GModule::initSerialPortForTtyLte(int baudRate, int tryCnt, int nsec)
 {
-    int ret = 0;
-    int cmdLen = 0;
+    int ret = 0, i = 0;
+    struct timeval tm;
 
-    /*check for arguments*/
-    if(!cmd)
+    if(tryCnt < 1) tryCnt = 1;
+
+    for(i=0; i<tryCnt; i++)
     {
-        ret = -EINVAL;
-        ERR_RECORDER("cmd buf is null.");
-    }else
-    {
-        cmdLen = strlen(cmd);
-        /*The shortest cmd is "AT".*/
-        if(cmdLen<2 || cmdLen >= BOXV3_MSG_LENGTH_4G-1)
+        //O_NONBLOCK|O_NOCTTY
+        fd = open(nodePath, O_RDWR);
+        if(fd < 0)
         {
-            ret = -EINVAL;
-            ERR_RECORDER("cmdLen is invalid.");
-        }else
-        {
-            /*cp cmd to buf, there must be have a sign '\r' in the end of the cmd*/
-            bzero(msg, BOXV3_MSG_LENGTH_4G);
-            strncpy(msg, cmd, cmdLen);
-            strncat(msg, "\r", 1);
-            cmdLen++;
-            /*write cmd*/
-            ret = write(fd, msg, cmdLen);
-            if(-1 == ret)
-            {
-                ret = -EBADR;
-                ERR_RECORDER("write cmd failed.");
-            }else if(0 == ret)
-            {
-                ret = -EAGAIN;
-                ERR_RECORDER("write none cmd.");
-            }else
-            {
-                bzero(msg, BOXV3_MSG_LENGTH_4G);
-                /*wait for 4G module ack for the cmd*/
-                sleep(2);
-                ret = read(fd, msg, BOXV3_MSG_LENGTH_4G);
-                if(ret < 0)
-                {
-                    ret = -EBADR;
-                    ERR_RECORDER("read cmd fadeback failed.");
-                }else if(0 == ret)
-                {
-                    ret = -EAGAIN;
-                    ERR_RECORDER("read none fadeback.");
-                }else
-                {
-                    if(NULL != checkString)
-                    {
-                        if(!strstr(msg, checkString))
-                        {
-                            ret = -ENODATA;
-                            ERR_RECORDER("read no match specific data.");
-                        }else
-                        {
-                            ret = 0;
-                        }
-
-                    }else
-                    {
-                        ret = 0;
-                    }
-                }
-            }
-        }
-    }
-
-    showBuf(msg, BOXV3_MSG_LENGTH_4G);
-    return ret;
-}
-
-int HUAWEI4GModule::initSerialPortFor4GModule(int* fd, char* nodePath, int baudRate)
-{
-    int ret = 0;
-
-    if(!fd || !nodePath)
-    {
-        ret = -EINVAL;
-        ERR_RECORDER("init arguments failed.");
-    }else
-    {
-        *fd = open(nodePath, O_RDWR|O_NOCTTY|O_NONBLOCK);
-        if(*fd < 0)
-        {
-            ret = -errno;
+            ret = -EAGAIN;
             ERR_RECORDER("Unable to open device");
         }else
         {
-            ret = setSerialPortNodeProperty(*fd, 8, 1, 'N', baudRate);
+            ret = setSerialPortNodeProperty(fd, 8, 1, 'N', baudRate);
+            /*some sets are wrong*/
+            if(0 != ret)
+            {
+                ret = -EAGAIN;
+                exitSerialPortFromTtyLte();
+            }else
+            {
+                /*success*/
+                break;
+            }
         }
-    }
-
-    /*some sets are wrong*/
-    if((0 != ret)&&(*fd > 0))
-    {
-        ret = -EAGAIN;
-        close(*fd);
-        *fd = -1;
+        /*delay, and try again*/
+        tm.tv_sec = nsec;
+        tm.tv_usec = 0;
+        if(nsec < 3) tm.tv_sec = 3;
+        select(0, NULL, NULL, NULL, &tm);
     }
 
     return ret;
 }
 
+void HUAWEI4GModule::exitSerialPortFromTtyLte()
+{
+    close(fd);
+    fd = -1;
+}
 
 
 
-int HUAWEI4GModule::waitWriteableForFd(int fd, struct timeval* tm)
+int HUAWEI4GModule::waitWriteableForFd(int fd, int nsec)
 {
     int ret = 0;
     fd_set writefds;
+    struct timeval tm;
+
+    if(nsec < 1) nsec=1;
 
     FD_ZERO(&writefds);
     FD_SET(fd, &writefds);
-    ret = select(fd+1, NULL, &writefds, NULL, tm) < 0;
+    tm.tv_sec = nsec;
+    tm.tv_usec = 0;
+    ret = select(fd+1, NULL, &writefds, NULL, &tm) < 0;
     if(ret < 0)
     {
         ERR_RECORDER(NULL);
@@ -321,16 +262,18 @@ int HUAWEI4GModule::waitReadableForFd(int fd, struct timeval* tm)
 
     return ret;
 }
-int HUAWEI4GModule::sendCMDofAT(int fd, char *cmdStr, int len)
+int HUAWEI4GModule::sendCMDofAT(int fd, char *cmd, int len)
 {
     int ret = 0, i = 0;
+    char cmdStr[AT_CMD_LENGTH_MAX] = {};
 
+    strncpy(cmdStr, cmd, len);
     strncat(cmdStr, AT_CMD_SUFFIX, strlen(AT_CMD_SUFFIX));
     len += strlen(AT_CMD_SUFFIX);
 
     for(i = 0; i < len; i++)
     {
-        ret = waitWriteableForFd(fd, NULL);
+        ret = waitWriteableForFd(fd, 1);
         if(!ret)
         {
             ret = write(fd, &cmdStr[i], 1);
@@ -347,50 +290,73 @@ int HUAWEI4GModule::sendCMDofAT(int fd, char *cmdStr, int len)
     return ret;
 }
 
-int HUAWEI4GModule::recvMsgFromATModule(int fd)
+int HUAWEI4GModule::recvMsgFromATModuleAndParsed(parseEnum key, int nsec)
 {
     int ret=0, i=0;
     char ch = 0;
-    //a line length
-    char buf[1024];
+    char buf[BUF_TMP_LENGTH] = {};
     int bufIndex = 0;
+    fd_set readfds;
+    struct timeval tm;
 
-    //read 10 line
+    if(nsec < 1) nsec = 1;
+
     for(i=0; i<=10; i++)
     {
-        ret = 0;
+        //wait a while for hw before read
         usleep(500);
-        fd_set readfds;
-
+        //use select timeval to monitor read-timeout and read-end
         FD_ZERO(&readfds);
         FD_SET(fd, &readfds);
-
-        if(select(fd + 1, &readfds, NULL, NULL, NULL) < 0)
+        tm.tv_sec = nsec;
+        tm.tv_usec = 0;
+        ret = select(fd+1, &readfds, NULL, NULL, &tm);
+        if(ret < 0)
         {
-            ret = -errno;
             ERR_RECORDER(strerror(errno));
+        }else if(0 == ret)
+        {
+            break;
         }else
         {
+            ret = 0;
             bzero(buf, sizeof(buf));
             bufIndex = 0;
             if(FD_ISSET(fd, &readfds))
             {
                 while(1 == read(fd, &ch, 1))
                 {
-                    sprintf(&buf[bufIndex++], "%c", ch);
-                    if (bufIndex >= 1023 )
+                    if (bufIndex >= (BUF_TMP_LENGTH - 1))
                     {
                         break;
+                    }else
+                    {
+                        sprintf(&buf[bufIndex++], "%c", ch);
                     }
                 }
+                printf("###############read:%d\n", i);
+                showBuf(buf, BUF_TMP_LENGTH);
+                //analyse read date if have key and if we wanna parse it
+                if(NOTPARSEACK != key)
+                {
+                    ret = parseATcmdACKbyLine(buf, BUF_TMP_LENGTH, key);
+                    DEBUG_PRINTF("parse(key:%d, ret:%d).", key, ret);
+                    if(!ret)
+                        break;
+                    else
+                        ret = -ENODATA;
+                }
+            }else
+            {
+                ret = -EINVAL;
+                ERR_RECORDER("select wrong, no data to read.");
             }
         }
-        printf("###############read:%d\n", i);
-        showBuf(buf, 1024);
     }
 
     return ret;
 }
+
 
 int HUAWEI4GModule::initUartAndTryCommunicateWith4GModule_ForTest(char* nodePath, char* cmd)
 {
@@ -402,13 +368,13 @@ int HUAWEI4GModule::initUartAndTryCommunicateWith4GModule_ForTest(char* nodePath
         ERR_RECORDER("nodePath couldn't be NULL.");
     }else
     {
-        ret = initSerialPortFor4GModule(&fd, (char*)BOXV3_NODEPATH_4G, BOXV3_BAUDRATE_UART);
+        ret = initSerialPortForTtyLte(BOXV3_BAUDRATE_UART, 1, 3);
         if(!ret)
         {
             ret = sendCMDofAT(fd, cmd, strlen(cmd));
             if(!ret)
             {
-                ret = recvMsgFromATModule(fd);
+                ret = recvMsgFromATModuleAndParsed(PARSEACK_OK, 1);
             }
         }
         close(fd);
@@ -417,177 +383,314 @@ int HUAWEI4GModule::initUartAndTryCommunicateWith4GModule_ForTest(char* nodePath
     return ret;
 }
 
-int HUAWEI4GModule::dialingForNetwork(void)
+int HUAWEI4GModule::parseConfigFile(char *key)
 {
     int ret = 0;
 
-    //china mobile
-    ret = communicationCheck((char*)"AT^NDISDUP=1,1,\"CMNET\"", (char*)"OK");
-    //china unicom
-    //china telecom
-    if(!ret)
+    if(strstr(key, "NODENAME"))
     {
-        ret = communicationCheck((char*)"AT^NDISSTATQRY?", (char*)"1,");
-        if(!ret)
-        {
-            printf("Dialing for China Mobile success!.\n");
-        }else
-        {
-            printf("Dialing for China Mobile failed!.\n");
-        }
+        strcpy(nodePath, BOXV3_NODEPATH_LTE);
     }
+    else
+    {
+        ret = -ENOMEM;
+        ERR_RECORDER(NULL);
+    }
+
     return ret;
 }
 
+char* HUAWEI4GModule::getKeyLineFromBuf(char* buf, char* key)
+{
+    char* token = NULL;
+    const char ss[2] = "\n";
 
-int HUAWEI4GModule::checkSIMCard(void)
+    if(!buf || !key)
+    {
+        ERR_RECORDER(NULL);
+        return NULL;
+    }
+
+    token = strtok(buf, ss);
+    while(token != NULL)
+    {
+        if(strstr(token, key))
+        {
+            break;
+        }else
+        {
+            token = strtok(NULL, ss);
+        }
+    }
+
+    return token;
+}
+
+int HUAWEI4GModule::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
 {
     int ret = 0;
-    /*2. if the card is there and works well, if do not works well, we should use "AT^RESET" to reset the card.*/
-    /*
-     * AT+CIMI
-     * 460042983702403
-     *
-     * OK
-     *
-     */
-    ret = communicationCheck((char*)"AT+CIMI", (char*)"OK");
-    if(!ret)
-    {
-        printf("SIM card works well.\n");
-    }else
-    {
-        printf("SIM card looks bad.\n");
+    char* linep = NULL;
 
-        printf("Try to reset, and check with 'AT+CIMI' again...\n");
-        ret = init4GModule(true);
-        if(!ret)
+    if(!buf) ret = -EINVAL;
+    else
+    {
+        //buf, must end with a '\0'
+        buf[len - 1] = '\0';
+
+        switch(e)
         {
-            init4GModule(false);
-            ret = checkSIMCard();
-            if(!ret)
+        case PARSEACK_AT:
+        case PARSEACK_RESET:
+        case PARSEACK_OK:
+        {
+            if(!strstr(buf, "OK"))
+                ret = -ENODATA;
+            break;
+        }
+        case PARSEACK_CPIN:
+        {
+            if(!strstr(buf, "READY"))
+                ret = -ENODATA;
+            break;
+        }
+        case PARSEACK_REG:
+        {
+            /* 1(或5) 表示数据业务可以使用；
+             * 2 、3 、4 表示数据业务不可用。
+             */
+            linep = getKeyLineFromBuf(buf, (char*)"+CREG");
+            if(linep)
             {
-                printf("SIM card works well.\n");
+                if((!strstr(linep, "1")) && (!strstr(linep, "5")))
+                    ret = -ENODATA;
+            }else
+                ERR_RECORDER(NULL);
+            break;
+        }
+        case PARSEACK_COPS_CH_M:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS");
+            if(linep)
+            {
+                if((!strstr(linep, "CMCC")) && (!strstr(linep, "CHINA MOBILE")))
+                    ret = -ENODATA;
+            }else
+                ERR_RECORDER(NULL);
+            break;
+        }
+        case PARSEACK_COPS_CH_T:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS");
+            if(linep)
+            {
+                if(!strstr(linep, "CHN-CT"))
+                    ret = -ENODATA;
+            }else
+                ERR_RECORDER(NULL);
+            break;
+        }
+        case PARSEACK_COPS_CH_U:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS");
+            if(linep)
+            {
+                if(!strstr(linep, "CHN-UNICOM"))
+                    ret = -ENODATA;
+            }else
+                ERR_RECORDER(NULL);
+            break;
+        }
+        case PARSEACK_NDISSTATQRY:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"^NDISSTAT");
+            if(linep)
+            {
+                if(!strstr(linep, "CHN-UNICOM"))
+                    ret = -ENODATA;
+            }else
+                ERR_RECORDER(NULL);
+            break;
+        }
+        default:
+        {
+            break;
+        }
+        }
+    }
+
+    return ret;
+}
+int HUAWEI4GModule::huaweiLTEmoduleDialingProcess(void)
+{
+    volatile int ret = 0, retryCnt = 0;
+
+    retryCnt = 1;
+    do{
+        DEBUG_PRINTF("retryCnt: %d", retryCnt);
+        //0. get nodePath and access permission
+        tryAccessDeviceNode();
+        //1. check available for module
+        sendCMDandCheckRecvMsg((char*)"AT", PARSEACK_AT, 3, 3);
+
+        //2. check slot & access for SIM
+        if(sendCMDandCheckRecvMsg((char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2))
+        {
+            sendCMDandCheckRecvMsg((char*)"AT^SIMSWITCH=1", PARSEACK_OK, 2, 2);
+            sendCMDandCheckRecvMsg((char*)"AT^SIMSWITCH=0", PARSEACK_OK, 2, 2);
+        }else
+        {
+            //tried SIMSWITCH many times, but didn't work, so try RESET for the MT
+            if(retryCnt <= 0)
+            {
+                sendCMDandCheckRecvMsg((char*)"AT^RESET", PARSEACK_RESET, 2, 2);
+                DEBUG_PRINTF("wait reset for more than 10s...");
+                sleep(10);
+                //call back or kill itself and restart by sysinit:respawn service
+                ret = -EAGAIN;
+                continue;
             }else
             {
-                printf("SIM card looks bad.\n");
+                break;
             }
-        }else
-        {
-            printf("Reset the 4G module failed.\n");
         }
-    }
+    }while(retryCnt-- > 0);
 
-    return ret;
-}
-
-int HUAWEI4GModule::checkGeneralInfo(void)
-{
-    int ret = 0;
-    /*1. if the 4g usb module is there and works well.*/
-    /*
-     * ATI
-     * Manufacturer: Huawei Technologies Co., Ltd.
-     * Model: ME909s-821
-     * Revision: 11.617.05.00.00
-     * IMEI: 867012032172634
-     * +GCAP: +CGSM,+DS,+ES
-     *
-     * OK
-     */
-    ret = communicationCheck((char*)"ATI", (char*)"OK");
     if(!ret)
     {
-        printf("4G module works well.\n");
-    }else
-    {
-        printf("4G module couldn't found in sys!\n");
-    }
+        //3. check data service for SIM
+        if(sendCMDandCheckRecvMsg((char*)"AT+CREG?", PARSEACK_REG, 2, 2))
+        {
+                ERR_RECORDER("can't get data service.");
+        }
 
-    return ret;
-}
-
-int HUAWEI4GModule::init4GModule(bool reset)
-{
-    int ret = 0;
-
-    ret = communicationCheck((char*)"ATE0", (char*)"OK");
-    if(!ret)
-    {
-        printf("Disable 4G module debug echo mode success.\n");
-    }else
-    {
-        printf("Disable 4G module debug echo mode failed.\n");
-    }
-
-    if(reset)
-    {
-        ret = communicationCheck((char*)"AT^RESET", (char*)"OK");
         if(!ret)
         {
-            printf("4G module is reseting, please wait...\n");
-            sleep(20);
-            printf("Reset 4G module success.\n");
-        }else
-        {
-            printf("Reset 4G module failed.\n");
+            //4. get network operator
+            if(!sendCMDandCheckRecvMsg((char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
+            {
+                //CMNET
+                ret |= 0x1;
+                sendCMDandCheckRecvMsg((char*)"AT^NDISDUP=1,1,\"CMNET\"", NOTPARSEACK, 2, 2);
+            }else if(!sendCMDandCheckRecvMsg((char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
+            {
+                //CTNET
+                ret |= 0x10;
+            }else if(!sendCMDandCheckRecvMsg((char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
+            {
+                //3GNET
+                ret = 0x100;
+            }
         }
-    }
 
-    return ret;
-}
-
-int HUAWEI4GModule::tryCommunicateWith4GModule(char* nodePath, int retryCnt)
-{
-    volatile int ret = 0;
-    int i=0;
-    bool resetFlag = false;
-
-    if(retryCnt<0) retryCnt=0;
-
-    if(!nodePath)
-    {
-        ret = -EPERM;
-        perror("nodePath couldn't be NULL.");
-    }else
-    {
-        /*
-         * O_RDWR 读、写打开;
-         * O_NOCTTY 如果是终端设备，则不将此设备分配作为此进程的控制终端;
-         * O_NONBLOCK 本次打开操作和后续的I / O操作设置非阻塞方式
-         */
-        fd = open(nodePath, O_RDWR|O_NOCTTY|O_NONBLOCK);
-        if(fd < 0)
+        if(0 == (ret & 0x111))
         {
             ret = -EINVAL;
-            perror(nodePath);
+            ERR_RECORDER("Didn't get network operator info.");
         }else
         {
-            if(setSerialPortNodeProperty(fd, 8, 1, 'N', BOXV3_BAUDRATE_UART))
+            //6. check the dialing result
+            if(!(ret = sendCMDandCheckRecvMsg((char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
             {
-                ret = -EIO;
-                fd = -1;
-                perror("Set Parity Error\n");
-            }else
-            {
-                resetFlag = false;
-                for(i=0; i<=retryCnt; i++)
-                {
-                    ret = init4GModule(resetFlag);
-                    if(!ret)
-                        ret = checkGeneralInfo();
-                    if(!ret)
-                        ret = checkSIMCard();
-                    if(!ret)
-                        ret = dialingForNetwork();
-
-                    resetFlag = true;
-                }
+                char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
+                strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
+                system(cmdLine);
             }
-            close(fd);
-            fd = -1;
         }
     }
+
+    //7. check for the internet access
+    if(!ret)
+    {
+        ret = checkInternetAccess();
+    }
+
+    return ret;
+}
+
+int HUAWEI4GModule::tryAccessDeviceNode(void)
+{
+    int ret = 0;
+    ret = parseConfigFile((char*)"NODENAME");
+    if(!ret)
+    {
+        ret = initSerialPortForTtyLte(BOXV3_BAUDRATE_UART, 1, 3);
+    }
+    return ret;
+}
+
+/*
+ * 描述符:
+ * TCIFLUSH     清除输入队列
+ * TCOFLUSH     清除输出队列
+ * TCIOFLUSH    清除输入、输出队列:
+*/
+int HUAWEI4GModule::tryBestToCleanSerialIO(void)
+{
+    int ret = 0;
+#if 1
+    int clearLine = 0;
+    char buf[1024] = {};
+    while(read(fd, buf, sizeof(buf)))
+    {
+        bzero(buf, sizeof(buf));
+        usleep(200);
+        if(clearLine++ > 1000) break;
+    }
+#else
+    tcflush(fd, TCIOFLUSH);
+#endif
+    return ret;
+}
+
+/*
+ * cmd: AT cmd with out suffix
+ * key: what msg you wanna get from recved msg after send msg to MT
+ * retryCnt: how many times do you wanna do again when this func exec failed.
+ * ndelay: how long would you wait each time when recv every signal msg from MT
+*/
+int HUAWEI4GModule::sendCMDandCheckRecvMsg(char* cmd, parseEnum key, int retryCnt, int ndelay)
+{
+    int ret = 0, i=0;
+
+    for(i=0; i<retryCnt; i++)
+    {
+        tryBestToCleanSerialIO();
+        ret = sendCMDofAT(fd, cmd, strlen(cmd));
+        if(!ret)
+        {
+            ret = recvMsgFromATModuleAndParsed(key, ndelay);
+            if(!ret) break;
+        }else
+            ERR_RECORDER(NULL);
+    }
+    return ret;
+}
+
+int HUAWEI4GModule::checkInternetAccess(void)
+{
+    int ret = 0;
+    /* ping
+     *
+     * -4,-6           Force IP or IPv6 name resolution
+     * -c CNT          Send only CNT pings
+     * -s SIZE         Send SIZE data bytes in packets (default:56)
+     * -t TTL          Set TTL
+     * -I IFACE/IP     Use interface or IP address as source
+     * -W SEC          Seconds to wait for the first response (default:10)
+     *                  (after all -c CNT packets are sent)
+     * -w SEC          Seconds until ping exits (default:infinite)
+     *                  (can exit earlier with -c CNT)
+     * -q              Quiet, only displays output at start
+     *                  and when finished
+    */
+    char cmdLine[64] = "ping -c 2 -s 1 -W 2 -w 3 -I ";
+    strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
+    strncat(cmdLine, " ", 1);
+    strncat(cmdLine, INTERNET_ACCESS_POINT, strlen(INTERNET_ACCESS_POINT));
+
+    ret = system(cmdLine);
+
+    DEBUG_PRINTF("ping ret: %d", ret);
 
     return ret;
 }

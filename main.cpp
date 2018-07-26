@@ -28,11 +28,18 @@ int main(int argc, char *argv[])
     cmdLineParser(a);
 
     HUAWEI4GModule module4G;
-#if 0
-    ret = module4G.tryCommunicateWith4GModule((char*)BOXV3_NODEPATH_4G, 1);
+#if 1
+    ret = module4G.checkInternetAccess();
     if(ret)
     {
-        module4G.showErrInfo(errInfo);
+        ret = module4G.huaweiLTEmoduleDialingProcess();
+        if(ret)
+        {
+            module4G.showErrInfo(errInfo);
+        }
+    }else
+    {
+        //Everythig is alerady works well.
     }
 #else
     if(argc < 2)
@@ -40,7 +47,7 @@ int main(int argc, char *argv[])
         perror("Too few argument.");
     }else
     {
-        ret = module4G.initUartAndTryCommunicateWith4GModule_ForTest((char*)BOXV3_NODEPATH_4G, argv[1]);
+        ret = module4G.initUartAndTryCommunicateWith4GModule_ForTest((char*)BOXV3_NODEPATH_LTE, argv[1]);
         if(ret)
         {
             module4G.showErrInfo(errInfo);
