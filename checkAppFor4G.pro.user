@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE QtCreatorProject>
-<!-- Written by QtCreator 3.5.1, 2018-07-25T18:50:39. -->
+<!-- Written by QtCreator 3.5.1, 2018-08-06T18:15:55. -->
 <qtcreator>
  <data>
   <variable>EnvironmentId</variable>
@@ -61,7 +61,7 @@
    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">arm-none-linux-gnueabi-g++</value>
    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">arm-none-linux-gnueabi-g++</value>
    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">{f27b3ef1-c192-4072-aad6-300ea6e55500}</value>
-   <value type="int" key="ProjectExplorer.Target.ActiveBuildConfiguration">0</value>
+   <value type="int" key="ProjectExplorer.Target.ActiveBuildConfiguration">1</value>
    <value type="int" key="ProjectExplorer.Target.ActiveDeployConfiguration">0</value>
    <value type="int" key="ProjectExplorer.Target.ActiveRunConfiguration">0</value>
    <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.0">

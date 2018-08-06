@@ -8,10 +8,12 @@ CONFIG -= app_bundle
 TEMPLATE = app
 
 SOURCES += main.cpp \
-    huawei4gmodule.cpp \
-    global.c
+    global.c \
+    threaddialing.cpp \
+    threadltenetmonitor.cpp
 
 HEADERS += \
-    huawei4gmodule.h \
-    global.h
+    global.h \
+    threaddialing.h \
+    threadltenetmonitor.h
 

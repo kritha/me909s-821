@@ -4,7 +4,7 @@
 #include <string.h>
 #include <strings.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.2.4"
+#define BOXV3CHECKAPP_VERSION "V0.3.8"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_BAUDRATE_UART 9600
@@ -17,6 +17,13 @@
 #define LTE_MODULE_NETNODENAME "usb0"
 #define INTERNET_ACCESS_POINT  "8.8.8.8"
 
+#if 0
+#define TIMESPEND_WHOLE_DIALING   24      //s
+#else
+#define TIMESPEND_WHOLE_DIALING   3      //s
+#endif
+#define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
+
 /*
  * Save __FILE__ ,__FUNCTION__, __LINE__, and err msg, when err occured.
 */
@@ -26,7 +33,7 @@
         errInfo.funcp = (char*)__func__;\
         errInfo.line = __LINE__;\
         if(notifyMsg){\
-            strcpy(errInfo.errMsgBuf, NULL==notifyMsg?"":notifyMsg);\
+            strcpy(errInfo.errMsgBuf, NULL==notifyMsg?"\n":notifyMsg);\
         }\
     }while(0)
 
@@ -51,6 +58,19 @@ enum parseEnum{
     PARSEACK_COPS_CH_T,
     PARSEACK_NDISSTATQRY,
 };
+
+enum dialingStage{
+    NOT_START_DIALING,
+    STAGE1_AT_MODULE_OK,
+    STAGE1_AT_MODULE_FAILED,
+    DIALING_END_SUCCESS,
+    DIALING_END_FAILED,
+};
+
+typedef struct _dialingResult{
+    char isDialedOk;
+    char stage;
+}dialingResult_t;
 
 extern errInfo_t errInfo;
 

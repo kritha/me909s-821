@@ -1,10 +1,9 @@
 #include <QCoreApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
-#include "huawei4gmodule.h"
+#include "threaddialing.h"
+#include "threadltenetmonitor.h"
 #include "global.h"
-
-
 
 static void cmdLineParser(QCoreApplication& a)
 {
@@ -23,37 +22,33 @@ static void cmdLineParser(QCoreApplication& a)
 
 int main(int argc, char *argv[])
 {
-    int ret = 0;
     QCoreApplication a(argc, argv);
+
     cmdLineParser(a);
 
-    HUAWEI4GModule module4G;
-#if 1
-    ret = module4G.checkInternetAccess();
-    if(ret)
-    {
-        ret = module4G.huaweiLTEmoduleDialingProcess();
-        if(ret)
-        {
-            module4G.showErrInfo(errInfo);
-        }
-    }else
-    {
-        //Everythig is alerady works well.
-    }
-#else
+    THREADDIALING moduleLTE;
+    threadLTENetMonitor monitor;
+
+    QObject::connect(&monitor, SIGNAL(signalStartDialing(char)), &moduleLTE, SLOT(slotStartDialing(char)), Qt::QueuedConnection);
+
+    int ret = 0;
+    int fd = -1;
+    char nodePath[128] = {};
+
+    monitor.start();
+
     if(argc < 2)
     {
-        perror("Too few argument.");
+        moduleLTE.start();
     }else
     {
-        ret = module4G.initUartAndTryCommunicateWith4GModule_ForTest((char*)BOXV3_NODEPATH_LTE, argv[1]);
+        ret = moduleLTE.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
         if(ret)
         {
-            module4G.showErrInfo(errInfo);
+            moduleLTE.showErrInfo(errInfo);
         }
+        return 0;
     }
-#endif
-    return 0;
-}
 
+    return a.exec();
+}
