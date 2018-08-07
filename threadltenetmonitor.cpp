@@ -2,7 +2,7 @@
 
 threadLTENetMonitor::threadLTENetMonitor()
 {
-
+    moveToThread(this);
 }
 
 
@@ -23,7 +23,7 @@ int threadLTENetMonitor::slotCheckInternetAccess(void)
      * -q              Quiet, only displays output at start
      *                  and when finished
     */
-    char cmdLine[64] = "ping -c 2 -s 1 -W 7 -w 10 -I ";
+    char cmdLine[64] = "ping -c 1 -s 1 -W 7 -w 10 -I ";
     strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
     strncat(cmdLine, " ", 1);
     strncat(cmdLine, INTERNET_ACCESS_POINT, strlen(INTERNET_ACCESS_POINT));
@@ -39,13 +39,20 @@ int threadLTENetMonitor::slotCheckInternetAccess(void)
 
 int threadLTENetMonitor::slotNetStateMonitor()
 {
+    volatile static char failedCnt = 0;
     DEBUG_PRINTF();
     int ret = 0;
     ret = slotCheckInternetAccess();
     if(ret)
     {
+        failedCnt++;
         DEBUG_PRINTF("###########LTE net's access failedd.");
-        emit signalStartDialing(0);
+        if(failedCnt > NET_ACCESS_FAILEDCNT_MAX)
+        {
+            DEBUG_PRINTF("Warning: Net access failed so many times that have to restart dialing!");
+            failedCnt = 0;
+            emit signalStartDialing(0);
+        }
     }else
     {
         DEBUG_PRINTF("###########LTE net's access looks good.");
@@ -54,11 +61,24 @@ int threadLTENetMonitor::slotNetStateMonitor()
     return ret;
 }
 
+void threadLTENetMonitor::slotDialingEnd(QByteArray array)
+{
+    DEBUG_PRINTF("%s.", array.data());
+    emit signalResumeTimerAgain(TIMEINTERVAL_LTE_NET_CHECK);
+}
+
 void threadLTENetMonitor::run()
 {
     QTimer checkTimer;
-    QObject::connect(&checkTimer, SIGNAL(timeout()), this, SLOT(slotNetStateMonitor()), Qt::QueuedConnection);
+    QObject::connect(&checkTimer, SIGNAL(timeout()), this, SLOT(slotNetStateMonitor()), Qt::DirectConnection);
 
+    /*connect below to prevent to access dialing process thread multiple times at the same time*/
+    QObject::connect(this, SIGNAL(signalStartDialing(char)), &checkTimer, SLOT(stop()), Qt::DirectConnection);
+    QObject::connect(this, SIGNAL(signalResumeTimerAgain(int)), &checkTimer, SLOT(start(int)), Qt::DirectConnection);
+
+    //1. imediately executed the monitor
+    this->slotNetStateMonitor();
+    //2. then monitor is executable by timer
     checkTimer.start(TIMEINTERVAL_LTE_NET_CHECK);
 
     exec();

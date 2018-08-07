@@ -4,7 +4,7 @@
 #include <string.h>
 #include <strings.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.3.8"
+#define BOXV3CHECKAPP_VERSION "V0.5.0"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_BAUDRATE_UART 9600
@@ -16,6 +16,7 @@
 
 #define LTE_MODULE_NETNODENAME "usb0"
 #define INTERNET_ACCESS_POINT  "8.8.8.8"
+#define NET_ACCESS_FAILEDCNT_MAX    2
 
 #if 0
 #define TIMESPEND_WHOLE_DIALING   24      //s

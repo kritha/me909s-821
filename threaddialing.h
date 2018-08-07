@@ -46,10 +46,12 @@ public:
     int checkInternetAccess();
 signals:
     void signalSendState(QByteArray tmpArray);
+    void signalDialingEnd(QByteArray array=QByteArray(NULL));
 public slots:
     void slotSendState(QByteArray tmpArray);
     void slotStartDialing(char reset);
     void slotStopDialing(void);
+    int slotAlwaysRecvMsgForDebug(void);
 protected:
     void run(void);
 };

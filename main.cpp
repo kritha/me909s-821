@@ -26,26 +26,31 @@ int main(int argc, char *argv[])
 
     cmdLineParser(a);
 
-    THREADDIALING moduleLTE;
+    THREADDIALING dialing;
     threadLTENetMonitor monitor;
 
-    QObject::connect(&monitor, SIGNAL(signalStartDialing(char)), &moduleLTE, SLOT(slotStartDialing(char)), Qt::QueuedConnection);
+    QObject::connect(&monitor, SIGNAL(signalStartDialing(char)), &dialing, SLOT(slotStartDialing(char)), Qt::QueuedConnection);
+    /*this connect for prevent multiple access dialing process at the same time*/
+    QObject::connect(&dialing, SIGNAL(signalDialingEnd(QByteArray)), &monitor, SLOT(slotDialingEnd(QByteArray)), Qt::QueuedConnection);
 
     int ret = 0;
     int fd = -1;
     char nodePath[128] = {};
 
-    monitor.start();
+#if 0 //read for debug
+    moduleLTE.slotAlwaysRecvMsgForDebug();
+    return a.exec();
+#endif
 
     if(argc < 2)
     {
-        moduleLTE.start();
+        monitor.start();
     }else
     {
-        ret = moduleLTE.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
+        ret = dialing.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
         if(ret)
         {
-            moduleLTE.showErrInfo(errInfo);
+            dialing.showErrInfo(errInfo);
         }
         return 0;
     }

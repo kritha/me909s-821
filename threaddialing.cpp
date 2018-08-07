@@ -183,7 +183,7 @@ int THREADDIALING::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate
 
     for(i=0; i<tryCnt; i++)
     {
-        //fd = open(nodePath, O_RDWR);
+        //*fdp = open(nodePath, O_RDWR);
         *fdp = open(nodePath, O_RDWR|O_NOCTTY);
         if(*fdp < 0)
         {
@@ -305,7 +305,7 @@ int THREADDIALING::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
     DEBUG_PRINTF("####################################");
     for(i=0; i<=10; i++)
     {
-        DEBUG_PRINTF("#iturn:%d\n", i);
+        DEBUG_PRINTF("#######iturn:%d\n", i);
         //wait a while for hw before read
         usleep(500);
         //use select timeval to monitor read-timeout and read-end
@@ -319,12 +319,18 @@ int THREADDIALING::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
             ERR_RECORDER(strerror(errno));
         }else if(0 == ret)
         {
-            ret = -ETIMEDOUT;
+            if(NOTPARSEACK == key)
+            {
+                ret = 0;
+            }else
+            {
+                ret = -ETIMEDOUT;
+            }
             break;
         }else
         {
             ret = 0;
-            bzero(buf, sizeof(buf));
+            bzero(buf, BUF_TMP_LENGTH);
             bufIndex = 0;
             if(FD_ISSET(fd, &readfds))
             {
@@ -348,6 +354,9 @@ int THREADDIALING::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
                         break;
                     else
                         ret = -ENODATA;
+                }else
+                {
+                    DEBUG_PRINTF("key is NOTPARSEACK.");
                 }
             }else
             {
@@ -379,6 +388,7 @@ int THREADDIALING::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char*
             if(!ret)
             {
                 ret = recvMsgFromATModuleAndParsed(*fdp, NOTPARSEACK, 1);
+                DEBUG_PRINTF("ret:%d\n", ret);
             }
         }
         close(*fdp);
@@ -446,8 +456,8 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
 
         switch(e)
         {
-        case PARSEACK_AT:
         case PARSEACK_RESET:
+        case PARSEACK_AT:
         case PARSEACK_OK:
         {
             if(!strstr(buf, "OK"))
@@ -471,7 +481,10 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
                 if((!strstr(linep, "1")) && (!strstr(linep, "5")))
                     ret = -ENODATA;
             }else
+            {
+                ret = -ENODATA;
                 ERR_RECORDER(NULL);
+            }
             break;
         }
         case PARSEACK_COPS_CH_M:
@@ -482,7 +495,10 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
                 if((!strstr(linep, "CMCC")) && (!strstr(linep, "CHINA MOBILE")))
                     ret = -ENODATA;
             }else
+            {
+                ret = -ENODATA;
                 ERR_RECORDER(NULL);
+            }
             break;
         }
         case PARSEACK_COPS_CH_T:
@@ -493,7 +509,10 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
                 if(!strstr(linep, "CHN-CT"))
                     ret = -ENODATA;
             }else
+            {
+                ret = -ENODATA;
                 ERR_RECORDER(NULL);
+            }
             break;
         }
         case PARSEACK_COPS_CH_U:
@@ -504,7 +523,10 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
                 if(!strstr(linep, "CHN-UNICOM"))
                     ret = -ENODATA;
             }else
+            {
+                ret = -ENODATA;
                 ERR_RECORDER(NULL);
+            }
             break;
         }
         case PARSEACK_NDISSTATQRY:
@@ -513,13 +535,26 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
             if(linep)
             {
                 if(!strstr(linep, "1,,,\"IPV4\""))
+                {
                     ret = -ENODATA;
+                }else
+                {
+                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
+                    showBuf(linep, BUF_TMP_LENGTH);
+                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
+                }
             }else
+            {
+                ret = -ENODATA;
                 ERR_RECORDER(NULL);
+            }
+
             break;
         }
         default:
         {
+            ret = -ENODATA;
+            ERR_RECORDER(NULL);
             break;
         }
         }
@@ -594,16 +629,34 @@ looper_dialing_init:
                     {
                         tryOnceFlag = 1;
                         DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_OK, 2, 2);
-                        sleep(1);
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_OK, 2, 2);
-                        sleep(1);
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_OK, 2, 2);
-                        sleep(1);
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_OK, 3, 2);
+                        sleep(2);
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_OK, 1, 2);
+                        sleep(2);
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_OK, 3, 2);
+                        sleep(2);
                         continue;
                     }else
                     {
                         DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
+                        /*
+                         * so many time switch doesn't work that have to reset the MT
+                         * if MT hasn't been reset
+                         */
+                        if(resetFlag)
+                        {
+                            ret = -EOWNERDEAD;
+                            DEBUG_PRINTF("MT couldn't work. MT has been reset, wouldn't reset again.");
+                        }else
+                        {
+                           resetFlag = 1;
+                           ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
+                           DEBUG_PRINTF("wait reset for more than 10s...");
+                           sleep(10);
+                           //call back or kill itself and restart by sysinit:respawn service
+                           DEBUG_PRINTF("reset done. Start check MT again.");
+                           goto looper_dialing_init;
+                        }
                     }
                 }
             }while(retryCnt-- > 0);
@@ -612,8 +665,12 @@ looper_dialing_init:
 
     if(ret)
     {
-        printf("Error: no SIM card.");
-        return ret;
+        printf("Error: no SIM card.\n");
+        if(resetFlag)
+        {
+            printf("Warning: if a SIM card had inserted in the slot, please plug it again. The slot is loose.\n");
+        }
+        goto looper_dialing_exit;
     }else
     {
         //3. check data service for SIM
@@ -621,56 +678,66 @@ looper_dialing_init:
         if(ret)
         {
             ERR_RECORDER("can't get data service.");
-            return ret;
+            goto looper_dialing_exit;
         }else
         {
             DEBUG_PRINTF("Success: the SIM card has data service.");
             ret = 0;
-            //4. get network operator
-            if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
+            //4.0 check the dialing result
+            if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 1, 2)))
             {
-                //CMNET
-                ret |= 0x1;
-                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
-                {
-                    DEBUG_PRINTF("CMCC dialing end.");
-                }else
-                {
-                    DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
-                }
-
-            }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
-            {
-                //CTNET
-                ret |= 0x10;
-            }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
-            {
-                //3GNET
-                ret = 0x100;
-            }
-
-
-            if(0 == (ret & 0x111))
-            {
-                ret = -EINVAL;
-                ERR_RECORDER("Didn't get network operator info.");
-                return ret;
+                DEBUG_PRINTF("Notices: the SIM card already dialing success.");
+                char cmdLine[64] = "udhcpc -t 4 -T 1 -A 1 -n -q -i ";
+                strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
+                ret = system(cmdLine);
             }else
             {
-                //6. check the dialing result
-                if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
+                ret = 0;
+                //4.1 get network operator
+                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
                 {
-                    char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
-                    strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
-                    system(cmdLine);
+                    //CMNET
+                    ret |= 0x1;
+                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
+                    {
+                        DEBUG_PRINTF("CMCC dialing end.");
+                    }else
+                    {
+                        DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
+                    }
+
+                }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
+                {
+                    //CTNET
+                    ret |= 0x10;
+                }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
+                {
+                    //3GNET
+                    ret = 0x100;
+                }
+
+                if(0 == (ret & 0x111))
+                {
+                    ret = -EINVAL;
+                    ERR_RECORDER("Didn't get network operator info.");
+                    goto looper_dialing_exit;
                 }else
                 {
-                    DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
-                    return ret;
+                    //6. check the dialing result
+                    if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
+                    {
+                        char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
+                        strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
+                        ret = system(cmdLine);
+                    }else
+                    {
+                        DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", NOTPARSEACK, 2, 1);
+                        goto looper_dialing_exit;
+                    }
                 }
             }
         }
-
     }
 
     //7. check for the internet access
@@ -679,6 +746,9 @@ looper_dialing_init:
         ret = checkInternetAccess();
     }
 
+looper_dialing_exit:
+
+    emit signalDialingEnd();
     return ret;
 }
 
@@ -779,13 +849,86 @@ void THREADDIALING::slotSendState(QByteArray tmpArray)
 
 void THREADDIALING::slotStartDialing(char reset)
 {
-    this->quit();
+    if(this->isRunning())
+    {
+        DEBUG_PRINTF("Dialing thread this->quit()...");
+        this->quit();
+        DEBUG_PRINTF("Dialing thread this->wait()...");
+        this->wait();
+    }
+
+    DEBUG_PRINTF("Dialing thread this->start()...");
     this->start();
 }
 
 void THREADDIALING::slotStopDialing()
 {
     this->quit();
+}
+
+int THREADDIALING::slotAlwaysRecvMsgForDebug()
+{
+    int ret = 0, fd = -1;
+    char ch = 0;
+    char buf[BUF_TMP_LENGTH] = {};
+    int bufIndex = 0;
+    fd_set readfds;
+
+    //0. get nodePath and access permission*fdp = open(nodePath, O_RDONLY);
+    fd = open(BOXV3_NODEPATH_LTE, O_RDONLY);
+    if(fd < 0)
+    {
+        ret = -EAGAIN;
+        ERR_RECORDER("Unable to open device");
+    }else
+    {
+        ret = setSerialPortNodeProperty(fd, 8, 1, 'N', B9600);
+        /*some sets are wrong*/
+        if(0 != ret)
+        {
+            ret = -EAGAIN;
+            exitSerialPortFromTtyLte(&fd);
+        }else
+        {
+            /*success*/
+            while(1)
+            {
+                //use select timeval to monitor read-timeout and read-end
+                FD_ZERO(&readfds);
+                FD_SET(fd, &readfds);
+                ret = select(fd+1, &readfds, NULL, NULL, NULL);
+                if(ret < 0)
+                {
+                    ERR_RECORDER(strerror(errno));
+                }else if(0 == ret)
+                {
+                    printf("...\n");
+                    sleep(1);
+                }else
+                {
+                    bzero(buf, BUF_TMP_LENGTH);
+                    bufIndex = 0;
+                    if(FD_ISSET(fd, &readfds))
+                    {
+                        while(1 == read(fd, &ch, 1))
+                        {
+                            if (bufIndex >= (BUF_TMP_LENGTH - 1))
+                            {
+                                break;
+                            }else
+                            {
+                                sprintf(&buf[bufIndex++], "%c", ch);
+                            }
+                        }
+                        showBuf(buf, BUF_TMP_LENGTH);
+                    }
+                }
+            }
+        }
+    }
+
+    close(fd);
+    return ret;
 }
 
 void THREADDIALING::run()
@@ -795,4 +938,5 @@ void THREADDIALING::run()
 
     ret = huaweiLTEmoduleDialingProcess(0);
 
+    exec();
 }

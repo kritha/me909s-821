@@ -13,9 +13,11 @@ public:
 signals:
     void signalStartDialing(char reset);
     void signalStopDialing(void);
+    void signalResumeTimerAgain(int mSec);
 public slots:
     int slotCheckInternetAccess();
     int slotNetStateMonitor();
+    void slotDialingEnd(QByteArray array);
 protected:
     void run(void);
 };
