@@ -15,8 +15,8 @@ signals:
     void signalStopDialing(void);
     void signalResumeTimerAgain(int mSec);
 public slots:
-    int slotCheckInternetAccess();
-    int slotNetStateMonitor();
+    int slotCheckInternetAccess(char priority = 0);
+    int slotNetStateMonitor(void);
     void slotDialingEnd(QByteArray array);
 protected:
     void run(void);

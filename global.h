@@ -4,12 +4,13 @@
 #include <string.h>
 #include <strings.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.5.1"
+#define BOXV3CHECKAPP_VERSION "V0.5.5"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_BAUDRATE_UART 9600
 #define BOXV3_ERRMSGBUF_LEN 1024
 #define BUF_TMP_LENGTH    1024
+#define AT_ACK_RESULT_INFO_LENGTH 128
 
 #define AT_CMD_LENGTH_MAX 32
 #define AT_CMD_SUFFIX   "\r\n"
@@ -52,12 +53,17 @@ enum parseEnum{
     PARSEACK_OK,
     PARSEACK_RESET,
     PARSEACK_AT,
+    PARSEACK_ATI,
     PARSEACK_CPIN,
     PARSEACK_REG,
+    PARSEACK_COPS,
     PARSEACK_COPS_CH_M,
     PARSEACK_COPS_CH_U,
     PARSEACK_COPS_CH_T,
     PARSEACK_NDISSTATQRY,
+    PARSEACK_CSQ,
+    SPECIAL_PARSE_IP_INFO,
+    SPECIAL_PARSE_PING_RESULT,
 };
 
 enum dialingStage{
@@ -71,6 +77,16 @@ enum dialingStage{
 typedef struct _dialingResult{
     char isDialedOk;
     enum dialingStage stage;
+    char atAck[AT_ACK_RESULT_INFO_LENGTH];
+    char atiAck[AT_ACK_RESULT_INFO_LENGTH];
+    char cpinAck[AT_ACK_RESULT_INFO_LENGTH];
+    char switchAck[AT_ACK_RESULT_INFO_LENGTH];
+    char cregAck[AT_ACK_RESULT_INFO_LENGTH];
+    char copsAck[AT_ACK_RESULT_INFO_LENGTH];
+    char qryAck[AT_ACK_RESULT_INFO_LENGTH];
+    char csqAck[AT_ACK_RESULT_INFO_LENGTH];
+    char ipinfo[AT_ACK_RESULT_INFO_LENGTH];
+    char pingAck[AT_ACK_RESULT_INFO_LENGTH];
 }dialingResult_t;
 
 extern errInfo_t errInfo;

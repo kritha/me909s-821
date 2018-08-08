@@ -14,7 +14,7 @@
 
 #include <QObject>
 #include <QThread>
-#include <QThreadStorage>
+#include <QNetworkInterface>
 
 #include "global.h"
 
@@ -31,8 +31,8 @@ public:
     int setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed);
     int initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* nodePath, char* devNodePath, char* cmd);
     int parseConfigFile(char *nodePath, int bufLen, char* key);
-    int parseATcmdACKbyLine(char *buf, int len, parseEnum e);
-    int generateDialingState(parseEnum e, int ret);
+    void initDialingState(dialingResult_t& info);
+    int parseATcmdACKbyLineOrSpecialCmd(dialingResult_t &info, char *buf, int len, parseEnum e);
     int tryAccessDeviceNode(int* fdp, char *nodePath, int nodeLen);
 
     int initSerialPortForTtyLte(int* fd, char *nodePath, int baudRate, int tryCnt, int nsec);
@@ -45,13 +45,15 @@ public:
     int tryBestToCleanSerialIO(int fd);
     char *getKeyLineFromBuf(char *buf, char *key);
     int checkInternetAccess();
+    int getNativeNetworkInfo(QString ifName, QString &ipString);
+    void showDialingResult(dialingResult_t& info);
 signals:
     void signalDialingEnd(QByteArray array);
 public slots:
     int slotAlwaysRecvMsgForDebug(void);
     int slotHuaWeiLTEmoduleDialingProcess(char resetFlag);
-protected:
-    void run();
+private:
+    dialingResult_t dialingResult;
 };
 
 class threadDialing: public QObject

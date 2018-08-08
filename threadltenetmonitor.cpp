@@ -6,7 +6,7 @@ threadLTENetMonitor::threadLTENetMonitor()
 }
 
 
-int threadLTENetMonitor::slotCheckInternetAccess(void)
+int threadLTENetMonitor::slotCheckInternetAccess(char priority)
 {
     int ret = 0;
     /* ping
@@ -23,7 +23,15 @@ int threadLTENetMonitor::slotCheckInternetAccess(void)
      * -q              Quiet, only displays output at start
      *                  and when finished
     */
-    char cmdLine[64] = "ping -c 1 -s 1 -W 7 -w 10 -I ";
+
+    char cmdLine[64] = {};
+    if(priority)
+    {
+        strcpy(cmdLine, "ping -c 1 -s 1 -W 1 -w 1 -I ");
+    }else
+    {
+        strcpy(cmdLine, "ping -c 1 -s 1 -W 7 -w 10 -I ");
+    }
     strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
     strncat(cmdLine, " ", 1);
     strncat(cmdLine, INTERNET_ACCESS_POINT, strlen(INTERNET_ACCESS_POINT));
@@ -37,26 +45,43 @@ int threadLTENetMonitor::slotCheckInternetAccess(void)
     return ret;
 }
 
-int threadLTENetMonitor::slotNetStateMonitor()
+int threadLTENetMonitor::slotNetStateMonitor(void)
 {
-    volatile static char failedCnt = 0;
+    volatile static char failedCnt = 0, firstFlag = 0;
     DEBUG_PRINTF();
     int ret = 0;
-    ret = slotCheckInternetAccess();
-    if(ret)
+
+    if(!firstFlag)
     {
-        failedCnt++;
-        DEBUG_PRINTF("###########LTE net's access failedd.");
-        if(failedCnt > NET_ACCESS_FAILEDCNT_MAX)
+        firstFlag = 1;
+        ret = slotCheckInternetAccess(1);
+        if(ret)
         {
-            DEBUG_PRINTF("Warning: Net access failed so many times that have to restart dialing!");
-            failedCnt = 0;
+            failedCnt++;
+            DEBUG_PRINTF("###########LTE net's access failed at first time.");
             emit signalStartDialing(0);
         }
-    }else
-    {
-        DEBUG_PRINTF("###########LTE net's access looks good.");
     }
+    else
+    {
+        ret = slotCheckInternetAccess(0);
+        if(ret)
+        {
+            failedCnt++;
+            DEBUG_PRINTF("###########LTE net's access failed.");
+            if(failedCnt > NET_ACCESS_FAILEDCNT_MAX)
+            {
+                DEBUG_PRINTF("Warning: Net access failed so many times that have to restart dialing!");
+                failedCnt = 0;
+                emit signalStartDialing(0);
+            }
+        }else
+        {
+            DEBUG_PRINTF("###########LTE net's access looks good.");
+        }
+    }
+
+
 
     return ret;
 }

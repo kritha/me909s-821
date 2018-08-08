@@ -2,6 +2,7 @@
 
 lteDialing::lteDialing()
 {
+    initDialingState(dialingResult);
 }
 
 void lteDialing::showBuf(char *buf, int len)
@@ -348,7 +349,7 @@ int lteDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
                 //analyse read date if have key and if we wanna parse it
                 if(NOTPARSEACK != key)
                 {
-                    ret = parseATcmdACKbyLine(buf, BUF_TMP_LENGTH, key);
+                    ret = parseATcmdACKbyLineOrSpecialCmd(dialingResult, buf, BUF_TMP_LENGTH, key);
                     DEBUG_PRINTF("parse(key:%d, ret:%d).", key, ret);
                     if(!ret)
                         break;
@@ -443,22 +444,60 @@ char* lteDialing::getKeyLineFromBuf(char* buf, char* key)
     return token;
 }
 
-int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
+void lteDialing::initDialingState(dialingResult_t &info)
+{
+    bzero(&info, sizeof(dialingResult_t));
+}
+
+int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf, int len, parseEnum e)
 {
     int ret = 0;
     char* linep = NULL;
 
-    if(!buf) ret = -EINVAL;
+    if(!buf)
+    {
+        ERR_RECORDER(NULL);
+        DEBUG_PRINTF();
+        ret = -EINVAL;
+    }
     else
     {
+        if((SPECIAL_PARSE_IP_INFO != e) && (SPECIAL_PARSE_PING_RESULT != e))
+        {
         //buf, must end with a '\0'
-        buf[len - 1] = '\0';
+            buf[len - 1] = '\0';
+        }
 
         switch(e)
         {
-        case PARSEACK_RESET:
-        case PARSEACK_AT:
         case PARSEACK_OK:
+        {
+            if(!strstr(buf, "OK"))
+                ret = -ENODATA;
+            break;
+        }
+        case PARSEACK_RESET:
+        {
+            if(!strstr(buf, "OK"))
+                ret = -ENODATA;
+            break;
+        }
+        case PARSEACK_AT:
+        {
+
+            linep = getKeyLineFromBuf(buf, (char*)"OK");
+            if(linep)
+            {
+                strncpy(info.atAck, linep, sizeof(info.atAck));
+            }else
+            {
+                bzero(info.atAck, sizeof(info.atAck));
+                ret = -ENODATA;
+            }
+
+            break;
+        }
+        case PARSEACK_ATI:
         {
             if(!strstr(buf, "OK"))
                 ret = -ENODATA;
@@ -466,8 +505,15 @@ int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
         }
         case PARSEACK_CPIN:
         {
-            if(!strstr(buf, "READY"))
+            linep = getKeyLineFromBuf(buf, (char*)"READY");
+            if(linep)
+            {
+                strncpy(info.cpinAck, linep, sizeof(info.cpinAck));
+            }else
+            {
+                bzero(info.cpinAck, sizeof(info.cpinAck));
                 ret = -ENODATA;
+            }
             break;
         }
         case PARSEACK_REG:
@@ -478,24 +524,41 @@ int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
             linep = getKeyLineFromBuf(buf, (char*)"+CREG");
             if(linep)
             {
+                strncpy(info.cregAck, linep, sizeof(info.cregAck));
                 if((!strstr(linep, "1")) && (!strstr(linep, "5")))
                     ret = -ENODATA;
             }else
             {
+                bzero(info.cregAck, sizeof(info.cregAck));
                 ret = -ENODATA;
                 ERR_RECORDER(NULL);
             }
             break;
         }
-        case PARSEACK_COPS_CH_M:
+        case PARSEACK_COPS:
         {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS");
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
             if(linep)
             {
+                strncpy(info.copsAck, linep, sizeof(info.copsAck));
+            }else
+            {
+                bzero(info.copsAck, sizeof(info.copsAck));
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case PARSEACK_COPS_CH_M:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
+            if(linep)
+            {
+                strncpy(info.copsAck, linep, sizeof(info.copsAck));
                 if((!strstr(linep, "CMCC")) && (!strstr(linep, "CHINA MOBILE")))
                     ret = -ENODATA;
             }else
             {
+                bzero(info.copsAck, sizeof(info.copsAck));
                 ret = -ENODATA;
                 ERR_RECORDER(NULL);
             }
@@ -503,13 +566,15 @@ int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
         }
         case PARSEACK_COPS_CH_T:
         {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS");
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
             if(linep)
             {
+                strncpy(info.copsAck, linep, sizeof(info.copsAck));
                 if(!strstr(linep, "CHN-CT"))
                     ret = -ENODATA;
             }else
             {
+                bzero(info.copsAck, sizeof(info.copsAck));
                 ret = -ENODATA;
                 ERR_RECORDER(NULL);
             }
@@ -517,16 +582,32 @@ int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
         }
         case PARSEACK_COPS_CH_U:
         {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS");
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
             if(linep)
             {
+                strncpy(info.copsAck, linep, sizeof(info.copsAck));
                 if(!strstr(linep, "CHN-UNICOM"))
                     ret = -ENODATA;
             }else
             {
+                bzero(info.copsAck, sizeof(info.copsAck));
                 ret = -ENODATA;
                 ERR_RECORDER(NULL);
             }
+            break;
+        }
+        case PARSEACK_CSQ:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"+CSQ:");
+            if(linep)
+            {
+                strncpy(info.csqAck, linep, sizeof(info.csqAck));
+            }else
+            {
+                ret = -ENODATA;
+                bzero(info.csqAck, sizeof(info.csqAck));
+            }
+
             break;
         }
         case PARSEACK_NDISSTATQRY:
@@ -534,6 +615,7 @@ int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
             linep = getKeyLineFromBuf(buf, (char*)"^NDISSTAT");
             if(linep)
             {
+                strncpy(info.qryAck, linep, sizeof(info.qryAck));
                 if(!strstr(linep, "1,,,\"IPV4\""))
                 {
                     ret = -ENODATA;
@@ -545,10 +627,37 @@ int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
                 }
             }else
             {
+                bzero(info.qryAck, sizeof(info.qryAck));
                 ret = -ENODATA;
                 ERR_RECORDER(NULL);
             }
 
+            break;
+        }
+        case SPECIAL_PARSE_IP_INFO:
+        {
+            if(len > 0)
+            {
+                strncpy(info.ipinfo, buf, len);
+            }else
+            {
+                bzero(info.ipinfo, sizeof(info.ipinfo));
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case SPECIAL_PARSE_PING_RESULT:
+        {
+            if(!len)
+            {
+                strcpy(info.pingAck, "OK");
+                info.isDialedOk = 1;
+            }else
+            {
+                ret = -ENODATA;
+                info.isDialedOk = 0;
+                strcpy(info.pingAck, "Not good.");
+            }
             break;
         }
         default:
@@ -648,10 +757,98 @@ int lteDialing::checkInternetAccess(void)
     if(ret)
         ERR_RECORDER("ping failed.");
 
+    parseATcmdACKbyLineOrSpecialCmd(dialingResult, (char*)"ret", ret, SPECIAL_PARSE_PING_RESULT);
     DEBUG_PRINTF("ping ret: %d", ret);
 
     return ret;
 }
+
+
+int lteDialing::getNativeNetworkInfo(QString ifName, QString& ipString)
+{
+    int ret = 0;
+
+    QNetworkInterface interface;
+    QList<QNetworkAddressEntry> entryList;
+    QList<QNetworkInterface> list = QNetworkInterface::allInterfaces();
+    int i=0, j = 0;
+
+    if(ifName.isEmpty())
+    {
+        ret = -EINVAL;
+        DEBUG_PRINTF("interface name is empty.");
+    }
+    else
+    {
+        //clean ip string
+        ipString = QString("");
+
+        for(i = 0; i<list.count(); i++)
+        {
+            interface = list.at(i);
+            entryList= interface.addressEntries();
+
+            if(interface.name() != ifName) continue;
+            //qDebug() << "DevName: " << interface.name();
+            //qDebug() << "Mac: " << interface.hardwareAddress();
+
+            //20180324log: There's error about it'll has a double scan for same name if you use the entryList.count(), What a fuck?
+            if(entryList.isEmpty())
+            {
+                DEBUG_PRINTF("Error: doesn't get a ip.");
+                break;
+            }else
+            {
+                QNetworkAddressEntry entry = entryList.at(j);
+                ipString = entry.ip().toString();
+                //entry.ip().toIPv4Address());
+                DEBUG_PRINTF("IP: %s.", entry.ip().toString().toLocal8Bit().data());
+                //qDebug() << "j"<<j<< "Netmask: " << entry.netmask().toString();
+                //qDebug() << "j"<<j<< "Broadcast: " << entry.broadcast().toString();
+            }
+        }
+
+        if(ipString.isEmpty() || ipString.isNull())
+        {
+            ERR_RECORDER(NULL);
+            DEBUG_PRINTF();
+            ret = -ENODATA;
+        }
+        DEBUG_PRINTF();
+
+    }
+
+    return ret;
+}
+
+void lteDialing::showDialingResult(dialingResult_t &info)
+{
+    DEBUG_PRINTF("#######################show begin#######################");
+    printf("ret:%d\n", info.isDialedOk);
+    printf("stage:%d\n", info.stage);
+    printf("AT:");
+    showBuf(info.atAck, sizeof(info.atAck));
+    printf("ATI");
+    showBuf(info.atiAck, sizeof(info.atiAck));
+    printf("CPIN:");
+    showBuf(info.cpinAck, sizeof(info.cpinAck));
+    printf("SWITCH:");
+    showBuf(info.switchAck, sizeof(info.switchAck));
+    printf("CREG:");
+    showBuf(info.cregAck, sizeof(info.cregAck));
+    printf("COPS:");
+    showBuf(info.copsAck, sizeof(info.copsAck));
+    printf("NDISSTATQRY:");
+    showBuf(info.qryAck, sizeof(info.qryAck));
+    printf("CSQ:");
+    showBuf(info.csqAck, sizeof(info.csqAck));
+    printf("IP:");
+    showBuf(info.ipinfo, sizeof(info.ipinfo));
+    printf("PING:");
+    showBuf(info.pingAck, sizeof(info.pingAck));
+    DEBUG_PRINTF("#######################show end#######################");
+}
+
 
 int lteDialing::slotAlwaysRecvMsgForDebug()
 {
@@ -728,6 +925,7 @@ int lteDialing::slotHuaWeiLTEmoduleDialingProcess(char reset)
 
     retryCnt = 2;
 looper_dialing_init:
+    initDialingState(dialingResult);
     //0. get nodePath and access permission
     ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
     if(ret)
@@ -747,6 +945,8 @@ looper_dialing_init:
         {
             DEBUG_PRINTF("Success: MT is working.");
 
+            //close display the cmd back
+            sendCMDandCheckRecvMsg(fd, (char*)"ATE0", PARSEACK_AT, 2, 1);
             /*
              * RESET the MT by user in force
             */
@@ -787,11 +987,13 @@ looper_dialing_init:
                         tryOnceFlag = 1;
                         DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
                         sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_OK, 3, 2);
-                        sleep(2);
+                        sleep(3);
+#if 0
                         sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_OK, 1, 2);
-                        sleep(2);
+                        sleep(1);
+#endif
                         sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_OK, 3, 2);
-                        sleep(2);
+                        sleep(3);
                         continue;
                     }else
                     {
@@ -840,17 +1042,21 @@ looper_dialing_init:
         {
             DEBUG_PRINTF("Success: the SIM card has data service.");
             ret = 0;
-            //4.0 check the dialing result
+            //6.1 check the dialing result
             if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 1, 2)))
             {
                 DEBUG_PRINTF("Notices: the SIM card already dialing success.");
                 char cmdLine[64] = "udhcpc -t 4 -T 1 -A 1 -n -q -i ";
                 strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
                 ret = system(cmdLine);
+
+                //6.0 get csq info and cops info
+                sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
+                sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS, 2, 1);
             }else
             {
                 ret = 0;
-                //4.1 get network operator
+                //4 get network operator
                 if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
                 {
                     //CMNET
@@ -863,14 +1069,29 @@ looper_dialing_init:
                         DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
                     }
 
-                }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
-                {
-                    //CTNET
-                    ret |= 0x10;
                 }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
                 {
                     //3GNET
+                    ret |= 0x10;
+                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
+                    {
+                        DEBUG_PRINTF("CH-U dialing end.");
+                    }else
+                    {
+                        DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
+                    }
+                }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
+                {
+                    //CTNET
                     ret = 0x100;
+                    sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
+                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", PARSEACK_OK, 2, 2))
+                    {
+                        DEBUG_PRINTF("CH-T dialing end.");
+                    }else
+                    {
+                        DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
+                    }
                 }
 
                 if(0 == (ret & 0x111))
@@ -880,7 +1101,9 @@ looper_dialing_init:
                     goto looper_dialing_exit;
                 }else
                 {
-                    //6. check the dialing result
+                    //6.0 get csq info
+                    sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
+                    //6.1 check the dialing result
                     if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
                     {
                         char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
@@ -889,7 +1112,6 @@ looper_dialing_init:
                     }else
                     {
                         DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", NOTPARSEACK, 2, 1);
                         goto looper_dialing_exit;
                     }
                 }
@@ -897,15 +1119,25 @@ looper_dialing_init:
         }
     }
 
-    //7. check for the internet access
+    //7.0 parse if has a ip
+    if(1)
+    {
+        QString ipString;
+        getNativeNetworkInfo(QString((char*)LTE_MODULE_NETNODENAME), ipString);
+        parseATcmdACKbyLineOrSpecialCmd(dialingResult, ipString.toLocal8Bit().data(), ipString.length(), SPECIAL_PARSE_IP_INFO);
+    }
+    DEBUG_PRINTF();
+    //7.1 check for the internet access
     if(!ret)
     {
         ret = checkInternetAccess();
     }
 
 looper_dialing_exit:
-
     QByteArray result("");
+    //debug
+    showDialingResult(dialingResult);
+    //debug end
     emit signalDialingEnd(result);
     return ret;
 }
