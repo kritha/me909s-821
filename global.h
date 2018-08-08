@@ -4,7 +4,7 @@
 #include <string.h>
 #include <strings.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.5.0"
+#define BOXV3CHECKAPP_VERSION "V0.5.1"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_BAUDRATE_UART 9600
@@ -70,7 +70,7 @@ enum dialingStage{
 
 typedef struct _dialingResult{
     char isDialedOk;
-    char stage;
+    enum dialingStage stage;
 }dialingResult_t;
 
 extern errInfo_t errInfo;

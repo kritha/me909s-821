@@ -1,10 +1,10 @@
 #include "threaddialing.h"
 
-THREADDIALING::THREADDIALING()
+lteDialing::lteDialing()
 {
 }
 
-void THREADDIALING::showBuf(char *buf, int len)
+void lteDialing::showBuf(char *buf, int len)
 {
     buf[len -1] = '\0';
     for(int i=0; i<len; i++)
@@ -15,7 +15,7 @@ void THREADDIALING::showBuf(char *buf, int len)
 }
 
 
-void THREADDIALING::showErrInfo(errInfo_t info)
+void lteDialing::showErrInfo(errInfo_t info)
 {
     unsigned int i = 0;
     printf("Error:");
@@ -36,7 +36,7 @@ void THREADDIALING::showErrInfo(errInfo_t info)
  * @parity       效验类型(取值N/E/O/S)
  * exec success: return 0; failed: return !0(with errno)
 */
-int THREADDIALING::setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed)
+int lteDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed)
 {
     int ret = 0;
     struct termios uartAttr[2];
@@ -172,7 +172,7 @@ int THREADDIALING::setSerialPortNodeProperty(int fd, int databits, int stopbits,
 }
 
 
-int THREADDIALING::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate, int tryCnt, int nsec)
+int lteDialing::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate, int tryCnt, int nsec)
 {
     int ret = 0, i = 0;
     struct timeval tm;
@@ -213,7 +213,7 @@ int THREADDIALING::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate
     return ret;
 }
 
-void THREADDIALING::exitSerialPortFromTtyLte(int* fd)
+void lteDialing::exitSerialPortFromTtyLte(int* fd)
 {
     close(*fd);
     *fd = -1;
@@ -221,7 +221,7 @@ void THREADDIALING::exitSerialPortFromTtyLte(int* fd)
 
 
 
-int THREADDIALING::waitWriteableForFd(int fd, int nsec)
+int lteDialing::waitWriteableForFd(int fd, int nsec)
 {
     int ret = 0;
     fd_set writefds;
@@ -245,7 +245,7 @@ int THREADDIALING::waitWriteableForFd(int fd, int nsec)
     return ret;
 }
 
-int THREADDIALING::waitReadableForFd(int fd, struct timeval* tm)
+int lteDialing::waitReadableForFd(int fd, struct timeval* tm)
 {
     int ret = 0;
     fd_set readfds;
@@ -263,7 +263,7 @@ int THREADDIALING::waitReadableForFd(int fd, struct timeval* tm)
 
     return ret;
 }
-int THREADDIALING::sendCMDofAT(int fd, char *cmd, int len)
+int lteDialing::sendCMDofAT(int fd, char *cmd, int len)
 {
     int ret = 0, i = 0;
     char cmdStr[AT_CMD_LENGTH_MAX] = {};
@@ -291,7 +291,7 @@ int THREADDIALING::sendCMDofAT(int fd, char *cmd, int len)
     return ret;
 }
 
-int THREADDIALING::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
+int lteDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
 {
     int ret=0, i=0;
     char ch = 0;
@@ -370,7 +370,7 @@ int THREADDIALING::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
 }
 
 
-int THREADDIALING::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* nodePath, char* devNodePath, char* cmd)
+int lteDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* nodePath, char* devNodePath, char* cmd)
 {
     int ret = 0;
 
@@ -397,7 +397,7 @@ int THREADDIALING::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char*
     return ret;
 }
 
-int THREADDIALING::parseConfigFile(char* nodePath, int bufLen, char *key)
+int lteDialing::parseConfigFile(char* nodePath, int bufLen, char *key)
 {
     int ret = 0;
     if(!nodePath) return -EINVAL;
@@ -417,7 +417,7 @@ int THREADDIALING::parseConfigFile(char* nodePath, int bufLen, char *key)
     return ret;
 }
 
-char* THREADDIALING::getKeyLineFromBuf(char* buf, char* key)
+char* lteDialing::getKeyLineFromBuf(char* buf, char* key)
 {
     char* token = NULL;
     const char ss[2] = "\n";
@@ -443,7 +443,7 @@ char* THREADDIALING::getKeyLineFromBuf(char* buf, char* key)
     return token;
 }
 
-int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
+int lteDialing::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
 {
     int ret = 0;
     char* linep = NULL;
@@ -562,7 +562,164 @@ int THREADDIALING::parseATcmdACKbyLine(char* buf, int len, parseEnum e)
 
     return ret;
 }
-int THREADDIALING::huaweiLTEmoduleDialingProcess(char reset)
+
+int lteDialing::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
+{
+    int ret = 0;
+    ret = parseConfigFile(nodePath, nodeLen, (char*)"NODENAME");
+    if(!ret)
+    {
+        ret = initSerialPortForTtyLte(fdp, nodePath, BOXV3_BAUDRATE_UART, 1, 3);
+    }
+    return ret;
+}
+
+/*
+ * 描述符:
+ * TCIFLUSH     清除输入队列
+ * TCOFLUSH     清除输出队列
+ * TCIOFLUSH    清除输入、输出队列:
+*/
+int lteDialing::tryBestToCleanSerialIO(int fd)
+{
+    int ret = 0;
+#if 1
+    int clearLine = 0;
+    char buf[1024] = {};
+    while(read(fd, buf, sizeof(buf)))
+    {
+        bzero(buf, sizeof(buf));
+        usleep(200);
+        if(clearLine++ > 1000) break;
+    }
+#else
+    tcflush(fd, TCIOFLUSH);
+#endif
+    return ret;
+}
+
+/*
+ * cmd: AT cmd with out suffix
+ * key: what msg you wanna get from recved msg after send msg to MT
+ * retryCnt: how many times do you wanna do again when this func exec failed.
+ * RDndelay: how long would you wait each time when recv every signal msg from MT
+*/
+int lteDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int retryCnt, int RDndelay)
+{
+    int ret = 0, i=0;
+
+    for(i=0; i<retryCnt; i++)
+    {
+        tryBestToCleanSerialIO(fd);
+        ret = sendCMDofAT(fd, cmd, strlen(cmd));
+        if(!ret)
+        {
+            ret = recvMsgFromATModuleAndParsed(fd, key, RDndelay);
+            if(!ret) break;
+        }else
+            ERR_RECORDER(NULL);
+    }
+    return ret;
+}
+
+int lteDialing::checkInternetAccess(void)
+{
+    int ret = 0;
+    /* ping
+     *
+     * -4,-6           Force IP or IPv6 name resolution
+     * -c CNT          Send only CNT pings
+     * -s SIZE         Send SIZE data bytes in packets (default:56)
+     * -t TTL          Set TTL
+     * -I IFACE/IP     Use interface or IP address as source
+     * -W SEC          Seconds to wait for the first response (default:10)
+     *                  (after all -c CNT packets are sent)
+     * -w SEC          Seconds until ping exits (default:infinite)
+     *                  (can exit earlier with -c CNT)
+     * -q              Quiet, only displays output at start
+     *                  and when finished
+    */
+    char cmdLine[64] = "ping -c 2 -s 1 -W 7 -w 10 -I ";
+    strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
+    strncat(cmdLine, " ", 1);
+    strncat(cmdLine, INTERNET_ACCESS_POINT, strlen(INTERNET_ACCESS_POINT));
+
+    ret = system(cmdLine);
+    if(ret)
+        ERR_RECORDER("ping failed.");
+
+    DEBUG_PRINTF("ping ret: %d", ret);
+
+    return ret;
+}
+
+int lteDialing::slotAlwaysRecvMsgForDebug()
+{
+    int ret = 0, fd = -1;
+    char ch = 0;
+    char buf[BUF_TMP_LENGTH] = {};
+    int bufIndex = 0;
+    fd_set readfds;
+
+    //0. get nodePath and access permission*fdp = open(nodePath, O_RDONLY);
+    fd = open(BOXV3_NODEPATH_LTE, O_RDONLY);
+    if(fd < 0)
+    {
+        ret = -EAGAIN;
+        ERR_RECORDER("Unable to open device");
+    }else
+    {
+        ret = setSerialPortNodeProperty(fd, 8, 1, 'N', B9600);
+        /*some sets are wrong*/
+        if(0 != ret)
+        {
+            ret = -EAGAIN;
+            exitSerialPortFromTtyLte(&fd);
+        }else
+        {
+            /*success*/
+            while(1)
+            {
+                //use select timeval to monitor read-timeout and read-end
+                FD_ZERO(&readfds);
+                FD_SET(fd, &readfds);
+                ret = select(fd+1, &readfds, NULL, NULL, NULL);
+                if(ret < 0)
+                {
+                    ERR_RECORDER(strerror(errno));
+                }else if(0 == ret)
+                {
+                    printf("...\n");
+                    sleep(1);
+                }else
+                {
+                    bzero(buf, BUF_TMP_LENGTH);
+                    bufIndex = 0;
+                    if(FD_ISSET(fd, &readfds))
+                    {
+                        while(1 == read(fd, &ch, 1))
+                        {
+                            if (bufIndex >= (BUF_TMP_LENGTH - 1))
+                            {
+                                break;
+                            }else
+                            {
+                                sprintf(&buf[bufIndex++], "%c", ch);
+                            }
+                        }
+                        showBuf(buf, BUF_TMP_LENGTH);
+                    }
+                }
+            }
+        }
+    }
+
+    close(fd);
+    return ret;
+}
+
+
+int lteDialing::slotHuaWeiLTEmoduleDialingProcess(char reset)
 {
     char resetFlag = 0, tryOnceFlag = 0;
     int ret = 0, retryCnt = 0, fd = -1;
@@ -748,195 +905,39 @@ looper_dialing_init:
 
 looper_dialing_exit:
 
-    emit signalDialingEnd();
+    QByteArray result("");
+    emit signalDialingEnd(result);
     return ret;
 }
 
-int THREADDIALING::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
+threadDialing::threadDialing()
 {
-    int ret = 0;
-    ret = parseConfigFile(nodePath, nodeLen, (char*)"NODENAME");
-    if(!ret)
-    {
-        ret = initSerialPortForTtyLte(fdp, nodePath, BOXV3_BAUDRATE_UART, 1, 3);
-    }
-    return ret;
+    worker = new lteDialing();
+    worker->moveToThread(&workerThread);
+    connect(&workerThread, &QThread::finished, worker, &QObject::deleteLater);
+    connect(this, &threadDialing::signalStartDialing, worker, &lteDialing::slotHuaWeiLTEmoduleDialingProcess);
+    connect(worker, &lteDialing::signalDialingEnd, this, &threadDialing::handleResults);
+    workerThread.start();
 }
 
-/*
- * 描述符:
- * TCIFLUSH     清除输入队列
- * TCOFLUSH     清除输出队列
- * TCIOFLUSH    清除输入、输出队列:
-*/
-int THREADDIALING::tryBestToCleanSerialIO(int fd)
+threadDialing::~threadDialing()
 {
-    int ret = 0;
-#if 1
-    int clearLine = 0;
-    char buf[1024] = {};
-    while(read(fd, buf, sizeof(buf)))
-    {
-        bzero(buf, sizeof(buf));
-        usleep(200);
-        if(clearLine++ > 1000) break;
-    }
-#else
-    tcflush(fd, TCIOFLUSH);
-#endif
-    return ret;
+    workerThread.quit();
+    workerThread.wait();
 }
 
-/*
- * cmd: AT cmd with out suffix
- * key: what msg you wanna get from recved msg after send msg to MT
- * retryCnt: how many times do you wanna do again when this func exec failed.
- * RDndelay: how long would you wait each time when recv every signal msg from MT
-*/
-int THREADDIALING::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int retryCnt, int RDndelay)
+lteDialing *threadDialing::getWorkerObject()
 {
-    int ret = 0, i=0;
-
-    for(i=0; i<retryCnt; i++)
-    {
-        tryBestToCleanSerialIO(fd);
-        ret = sendCMDofAT(fd, cmd, strlen(cmd));
-        if(!ret)
-        {
-            ret = recvMsgFromATModuleAndParsed(fd, key, RDndelay);
-            if(!ret) break;
-        }else
-            ERR_RECORDER(NULL);
-    }
-    return ret;
+    return worker;
 }
 
-int THREADDIALING::checkInternetAccess(void)
+void threadDialing::handleResults(const QByteArray array)
 {
-    int ret = 0;
-    /* ping
-     *
-     * -4,-6           Force IP or IPv6 name resolution
-     * -c CNT          Send only CNT pings
-     * -s SIZE         Send SIZE data bytes in packets (default:56)
-     * -t TTL          Set TTL
-     * -I IFACE/IP     Use interface or IP address as source
-     * -W SEC          Seconds to wait for the first response (default:10)
-     *                  (after all -c CNT packets are sent)
-     * -w SEC          Seconds until ping exits (default:infinite)
-     *                  (can exit earlier with -c CNT)
-     * -q              Quiet, only displays output at start
-     *                  and when finished
-    */
-    char cmdLine[64] = "ping -c 2 -s 1 -W 7 -w 10 -I ";
-    strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
-    strncat(cmdLine, " ", 1);
-    strncat(cmdLine, INTERNET_ACCESS_POINT, strlen(INTERNET_ACCESS_POINT));
-
-    ret = system(cmdLine);
-    if(ret)
-        ERR_RECORDER("ping failed.");
-
-    DEBUG_PRINTF("ping ret: %d", ret);
-
-    return ret;
+    emit signalDialingEnd(array);
 }
 
-void THREADDIALING::slotSendState(QByteArray tmpArray)
+void threadDialing::slotStartDialing(char reset)
 {
-
-}
-
-void THREADDIALING::slotStartDialing(char reset)
-{
-    if(this->isRunning())
-    {
-        DEBUG_PRINTF("Dialing thread this->quit()...");
-        this->quit();
-        DEBUG_PRINTF("Dialing thread this->wait()...");
-        this->wait();
-    }
-
-    DEBUG_PRINTF("Dialing thread this->start()...");
-    this->start();
-}
-
-void THREADDIALING::slotStopDialing()
-{
-    this->quit();
-}
-
-int THREADDIALING::slotAlwaysRecvMsgForDebug()
-{
-    int ret = 0, fd = -1;
-    char ch = 0;
-    char buf[BUF_TMP_LENGTH] = {};
-    int bufIndex = 0;
-    fd_set readfds;
-
-    //0. get nodePath and access permission*fdp = open(nodePath, O_RDONLY);
-    fd = open(BOXV3_NODEPATH_LTE, O_RDONLY);
-    if(fd < 0)
-    {
-        ret = -EAGAIN;
-        ERR_RECORDER("Unable to open device");
-    }else
-    {
-        ret = setSerialPortNodeProperty(fd, 8, 1, 'N', B9600);
-        /*some sets are wrong*/
-        if(0 != ret)
-        {
-            ret = -EAGAIN;
-            exitSerialPortFromTtyLte(&fd);
-        }else
-        {
-            /*success*/
-            while(1)
-            {
-                //use select timeval to monitor read-timeout and read-end
-                FD_ZERO(&readfds);
-                FD_SET(fd, &readfds);
-                ret = select(fd+1, &readfds, NULL, NULL, NULL);
-                if(ret < 0)
-                {
-                    ERR_RECORDER(strerror(errno));
-                }else if(0 == ret)
-                {
-                    printf("...\n");
-                    sleep(1);
-                }else
-                {
-                    bzero(buf, BUF_TMP_LENGTH);
-                    bufIndex = 0;
-                    if(FD_ISSET(fd, &readfds))
-                    {
-                        while(1 == read(fd, &ch, 1))
-                        {
-                            if (bufIndex >= (BUF_TMP_LENGTH - 1))
-                            {
-                                break;
-                            }else
-                            {
-                                sprintf(&buf[bufIndex++], "%c", ch);
-                            }
-                        }
-                        showBuf(buf, BUF_TMP_LENGTH);
-                    }
-                }
-            }
-        }
-    }
-
-    close(fd);
-    return ret;
-}
-
-void THREADDIALING::run()
-{
-    int ret = 0;
-    dialingResult_t dialResultTmp;
-
-    ret = huaweiLTEmoduleDialingProcess(0);
-
-    exec();
+    reset = 0;
+    emit signalStartDialing(reset);
 }

@@ -70,11 +70,11 @@ void threadLTENetMonitor::slotDialingEnd(QByteArray array)
 void threadLTENetMonitor::run()
 {
     QTimer checkTimer;
-    QObject::connect(&checkTimer, SIGNAL(timeout()), this, SLOT(slotNetStateMonitor()), Qt::DirectConnection);
+    QObject::connect(&checkTimer, &QTimer::timeout, this, &threadLTENetMonitor::slotNetStateMonitor);
 
     /*connect below to prevent to access dialing process thread multiple times at the same time*/
-    QObject::connect(this, SIGNAL(signalStartDialing(char)), &checkTimer, SLOT(stop()), Qt::DirectConnection);
-    QObject::connect(this, SIGNAL(signalResumeTimerAgain(int)), &checkTimer, SLOT(start(int)), Qt::DirectConnection);
+    QObject::connect(this, &threadLTENetMonitor::signalStartDialing, &checkTimer, &QTimer::stop);
+    QObject::connect(this, SIGNAL(signalResumeTimerAgain(int)), &checkTimer, SLOT(start(int)));
 
     //1. imediately executed the monitor
     this->slotNetStateMonitor();
