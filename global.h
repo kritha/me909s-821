@@ -5,7 +5,7 @@
 #include <strings.h>
 #include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.6.0"
+#define BOXV3CHECKAPP_VERSION "V0.6.6"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_BAUDRATE_UART 115200
@@ -58,11 +58,13 @@ enum parseEnum{
     PARSEACK_CPIN,
     PARSEACK_REG,
     PARSEACK_COPS,
+    PARSEACK_SWITCH_CHANNEL,
     PARSEACK_COPS_CH_M,
     PARSEACK_COPS_CH_U,
     PARSEACK_COPS_CH_T,
     PARSEACK_NDISSTATQRY,
     PARSEACK_CSQ,
+    PARSEACK_TEMP,
     SPECIAL_PARSE_IP_INFO,
     SPECIAL_PARSE_PING_RESULT,
 };
@@ -86,6 +88,7 @@ typedef struct _dialingResult{
     char copsAck[AT_ACK_RESULT_INFO_LENGTH];
     char qryAck[AT_ACK_RESULT_INFO_LENGTH];
     char csqAck[AT_ACK_RESULT_INFO_LENGTH];
+    char tempAck[AT_ACK_RESULT_INFO_LENGTH];
     char ipinfo[AT_ACK_RESULT_INFO_LENGTH];
     char pingAck[AT_ACK_RESULT_INFO_LENGTH];
 }dialingResult_t;

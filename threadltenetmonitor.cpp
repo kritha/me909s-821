@@ -59,7 +59,7 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
         {
             failedCnt++;
             DEBUG_PRINTF("###########LTE net's access failed at first time.");
-            writeLogLTE(LTE_DISCONNECTED);
+            //writeLogLTE(LTE_DISCONNECTED);
             emit signalStartDialing(0);
         }else
         {
@@ -145,10 +145,12 @@ int threadLTENetMonitor::createLogFile(QString dirFullPath)
         cmd = QString("touch ");
         cmd += dirFullPath;
         ret = system(cmd.toLocal8Bit().data());
+#if 0
         //write item info
         cmd = QString("echo 'connect\t\t\tdisconnect\t\t\tconnectMax\n' > ");
         cmd += dirFullPath;
         system(cmd.toLocal8Bit().data());
+#endif
     }
 
     return ret;
@@ -158,7 +160,7 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
 {
     int ret = 0;
     QString cmd;
-    volatile static connectTimeStatus lastTimeStatus;
+    static enum connectTimeStatus lastTimeStatus;
 
     switch(c)
     {
@@ -167,13 +169,14 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
         if(LTE_CONNECTED != lastTimeStatus)
         {
             //-e 表示开启转义, "\c"表示不换行
-            cmd = QString("echo -e ");
+            //cmd = QString("echo -e ");
+            cmd = QString("echo ");
             cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
-            cmd += QString(" >> ");
+            //cmd += QString("(connected) \"\\c\" >> ");
+            cmd += QString(" connected >> ");
             cmd += QString(NET_ACCESS_LOG_DIR);
             cmd += QString("/");
             cmd += QString(NET_ACCESS_LOG_FILENAME);
-            cmd += QString(" \"\\c\"");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("---cmd: %s", cmd.toLocal8Bit().data());
         }else
@@ -186,14 +189,12 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
     {
         if(LTE_CONNECTED != lastTimeStatus)
         {
-            //-e 表示开启转义, \c表示不换行
-            cmd = QString("echo -e \t\t\t");
+            cmd = QString("echo ");
             cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
-            cmd += QString(" >> ");
+            cmd += QString(" disconnected >> ");
             cmd += QString(NET_ACCESS_LOG_DIR);
             cmd += QString("/");
             cmd += QString(NET_ACCESS_LOG_FILENAME);
-            cmd += QString(" \"\\c\"");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
         }else
@@ -204,13 +205,6 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
     }
     case LTE_CONNECTED_UPTIME:
     {
-        cmd = QString("echo -e \t\t\t");
-        cmd += QString(" >> ");
-        cmd += QString(NET_ACCESS_LOG_DIR);
-        cmd += QString("/");
-        cmd += QString(NET_ACCESS_LOG_FILENAME);
-        system(cmd.toLocal8Bit().data());
-        DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
         break;
     }
     default:

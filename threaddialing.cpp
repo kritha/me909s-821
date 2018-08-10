@@ -520,13 +520,39 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
         {
             /* 1(或5) 表示数据业务可以使用；
              * 2 、3 、4 表示数据业务不可用。
+             *
+             * +CREG: <stat>[,<lac>,<ci>[,<AcT>]].
+
+             * <n>:
+                0  Disable network registration unsolicited result code +CREG. (default value)
+                1  Enable network registration unsolicited result code +CREG: <stat>.
+                2  Enable network registration and location information unsolicited result code
+
+             * <stat>:
+                0  Not registered, MS is not currently searching for a new operator to register
+                with.
+                1  Registered, home network.
+                2  Not registered, but MS is currently searching for a new operator to register
+                with.
+                3  Registration denied.
+                4  Unknown.
+                5  Registered, roaming.
              */
-            linep = getKeyLineFromBuf(buf, (char*)"+CREG");
+            linep = getKeyLineFromBuf(buf, (char*)"+CREG:");
             if(linep)
             {
                 strncpy(info.cregAck, linep, sizeof(info.cregAck));
                 if((!strstr(linep, "1")) && (!strstr(linep, "5")))
+                {
                     ret = -ENODATA;
+                    //debug
+                    if(!strstr(linep, "2"))
+                    {
+                        DEBUG_PRINTF("---debug---reg: 0,2");
+                        ret = 0;
+                    }
+                    //debug end
+                }
             }else
             {
                 bzero(info.cregAck, sizeof(info.cregAck));
@@ -544,6 +570,28 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             }else
             {
                 bzero(info.copsAck, sizeof(info.copsAck));
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case PARSEACK_SWITCH_CHANNEL:
+        {
+            /*'ret' which is very special at here, which is the num of channel, or -errno with errno*/
+            linep = getKeyLineFromBuf(buf, (char*)"^SIMSWITCH:");
+            if(linep)
+            {
+                strncpy(info.switchAck, linep, sizeof(info.switchAck));
+                char* chp = getKeyLineFromBuf(linep, (char*)"1");
+                if(chp)
+                {//channel 1
+                    ret = 1;
+                }else
+                {//channel 0
+                    ret = 0;
+                }
+            }else
+            {
+                bzero(info.switchAck, sizeof(info.switchAck));
                 ret = -ENODATA;
             }
             break;
@@ -610,9 +658,22 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
 
             break;
         }
+        case PARSEACK_TEMP:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"^CHIPTEMP:");
+            if(linep)
+            {
+                strncpy(info.tempAck, linep, sizeof(info.tempAck));
+            }else
+            {
+                ret = -ENODATA;
+                bzero(info.tempAck, sizeof(info.tempAck));
+            }
+            break;
+        }
         case PARSEACK_NDISSTATQRY:
         {
-            linep = getKeyLineFromBuf(buf, (char*)"^NDISSTAT");
+            linep = getKeyLineFromBuf(buf, (char*)"^NDISSTATQRY:");
             if(linep)
             {
                 strncpy(info.qryAck, linep, sizeof(info.qryAck));
@@ -842,6 +903,8 @@ void lteDialing::showDialingResult(dialingResult_t &info)
     showBuf(info.qryAck, sizeof(info.qryAck));
     printf("CSQ:");
     showBuf(info.csqAck, sizeof(info.csqAck));
+    printf("TEMP:");
+    showBuf(info.tempAck, sizeof(info.tempAck));
     printf("IP:");
     showBuf(info.ipinfo, sizeof(info.ipinfo));
     printf("PING:");
@@ -916,15 +979,14 @@ int lteDialing::slotAlwaysRecvMsgForDebug()
 }
 
 
-int lteDialing::slotHuaWeiLTEmoduleDialingProcess(char reset)
+int lteDialing::slotHuaWeiLTEmoduleDialingProcess(char resetFlag)
 {
-    char resetFlag = 0, tryOnceFlag = 0;
-    int ret = 0, retryCnt = 0, fd = -1;
+    char probeCntFlag = 0, currentChannel = 0;
+    int ret = 0, fd = -1;
     char nodePath[128] = {};
 
 
-    retryCnt = 2;
-looper_dialing_init:
+looper_check_stage_devicenode:
     initDialingState(dialingResult);
     //0. get nodePath and access permission
     ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
@@ -936,6 +998,7 @@ looper_dialing_init:
     {
         DEBUG_PRINTF("Success: access MT device node.");
         //1. check available for module
+//looper_check_stage_ltemodule:
         ret = sendCMDandCheckRecvMsg(fd, (char*)"AT", PARSEACK_AT, 2, 2);
         if(ret)
         {
@@ -946,93 +1009,88 @@ looper_dialing_init:
             DEBUG_PRINTF("Success: MT is working.");
 
             //close display the cmd back
-            sendCMDandCheckRecvMsg(fd, (char*)"ATE0", PARSEACK_AT, 2, 1);
+            //sendCMDandCheckRecvMsg(fd, (char*)"ATE0", PARSEACK_AT, 2, 1);
             /*
              * RESET the MT by user in force
             */
-            DEBUG_PRINTF("resetFlag: %d", resetFlag);
-            if(reset)
+            if(resetFlag)
             {
-                //if MT hasn't been reset
-                if(resetFlag)
-                {
-                    ret = -EOWNERDEAD;
-                    DEBUG_PRINTF("MT couldn't work. MT has been reset, wouldn't reset again.");
-                }else
-                {
-                   resetFlag = 1;
-                   ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
-                   DEBUG_PRINTF("wait reset for more than 10s...");
-                   sleep(10);
-                   //call back or kill itself and restart by sysinit:respawn service
-                   DEBUG_PRINTF("reset done. Start check MT again.");
-                   goto looper_dialing_init;
-                }
+               ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
+               DEBUG_PRINTF("wait reset for more than 10s...");
+               sleep(10);
+               //call back or kill itself and restart by sysinit:respawn service
+               DEBUG_PRINTF("reset done. Start check MT again.");
+               goto looper_check_stage_devicenode;
             }
 
             //2. check slot & access for SIM
-            do{
-                DEBUG_PRINTF("retryCnt: %d", retryCnt);
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
-                if(!ret)
+looper_check_stage_simslot:
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
+            if(!ret)
+            {
+                DEBUG_PRINTF("Success: found a SIM card");
+            }else
+            {
+                ret = -EAGAIN;
+                DEBUG_PRINTF("Warning: \"AT+CPIN?\" failed!");
+                if(3 > probeCntFlag)
                 {
-                    DEBUG_PRINTF("Success: found a SIM card");
-                    break;
-                }else
-                {
-                    ret = -EAGAIN;
-                    DEBUG_PRINTF("Warning: \"AT+CPIN?\" failed!");
-                    if(!tryOnceFlag)
+                    if(!(probeCntFlag++/2))
                     {
-                        tryOnceFlag = 1;
                         DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_OK, 2, 2);
-                        sleep(4);
-#if 0
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_OK, 2, 2);
-                        sleep(1);
-#endif
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_OK, 2, 2);
-                        sleep(4);
-                        continue;
+
+                        currentChannel = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                        switch(currentChannel)
+                        {
+                        case 0:
+                        {
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            sleep(4);
+                            break;
+                        }
+                        case 1:
+                        {
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            sleep(4);
+                            break;
+                        }
+                        default:
+                        {
+                            DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 1.");
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            sleep(4);
+                            break;
+                        }
+                        }
+                        goto looper_check_stage_simslot;
                     }else
                     {
                         DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
                         /*
-                         * so many time switch doesn't work that have to reset the MT
-                         * if MT hasn't been reset
-                         */
-                        if(resetFlag)
-                        {
-                            ret = -EOWNERDEAD;
-                            DEBUG_PRINTF("MT couldn't work. MT has been reset, wouldn't reset again.");
-                        }else
-                        {
-                           resetFlag = 1;
-                           ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
-                           DEBUG_PRINTF("wait reset for more than 10s...");
-                           sleep(10);
-                           //call back or kill itself and restart by sysinit:respawn service
-                           DEBUG_PRINTF("reset done. Start check MT again.");
-                           goto looper_dialing_init;
-                        }
+                        * switch doesn't work that have to reset the MT
+                        * if MT hasn't been reset
+                        */
+
+                        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
+                        DEBUG_PRINTF("wait reset for more than 10s...");
+                        sleep(10);
+                        //call back or kill itself and restart by sysinit:respawn service
+                        DEBUG_PRINTF("reset done. Start check MT again.");
+                        goto looper_check_stage_devicenode;
                     }
                 }
-            }while(retryCnt-- > 0);
+            }
         }
     }
 
     if(ret)
     {
         printf("Error: no SIM card.\n");
-        if(resetFlag)
-        {
-            printf("Warning: if a SIM card had inserted in the slot, please plug it again. The slot is loose.\n");
-        }
         goto looper_dialing_exit;
     }else
     {
         //3. check data service for SIM
+//looper_check_stage_dataservice:
         ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CREG?", PARSEACK_REG, 2, 2);
         if(ret)
         {
@@ -1040,82 +1098,67 @@ looper_dialing_init:
             goto looper_dialing_exit;
         }else
         {
+            ;/*ChinaT: +REG:0, 2   but is works well.*/
+        }
+
+        if(1)
+        {
             DEBUG_PRINTF("Success: the SIM card has data service.");
+
             ret = 0;
-            //6.1 check the dialing result
-            if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 1, 2)))
+            //4 get network operator
+//looper_check_stage_dialingoperator:
+            if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
             {
-                DEBUG_PRINTF("Notices: the SIM card already dialing success.");
-                char cmdLine[64] = "udhcpc -t 4 -T 1 -A 1 -n -q -i ";
-                strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
-                ret = system(cmdLine);
-
-                //6.0 get csq info and cops info
-                sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
-                sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS, 2, 1);
-            }else
-            {
-                ret = 0;
-                //4 get network operator
-                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
+                //CMNET
+                ret |= 0x1;
+                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
                 {
-                    //CMNET
-                    ret |= 0x1;
-                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
-                    {
-                        DEBUG_PRINTF("CMCC dialing end.");
-                    }else
-                    {
-                        DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
-                    }
-
-                }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
-                {
-                    //3GNET
-                    ret |= 0x10;
-                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
-                    {
-                        DEBUG_PRINTF("CH-U dialing end.");
-                    }else
-                    {
-                        DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
-                    }
-                }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
-                {
-                    //CTNET
-                    ret = 0x100;
-                    sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
-                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", PARSEACK_OK, 2, 2))
-                    {
-                        DEBUG_PRINTF("CH-T dialing end.");
-                    }else
-                    {
-                        DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
-                    }
-                }
-
-                if(0 == (ret & 0x111))
-                {
-                    ret = -EINVAL;
-                    ERR_RECORDER("Didn't get network operator info.");
-                    goto looper_dialing_exit;
+                    DEBUG_PRINTF("CMCC dialing end.");
                 }else
                 {
-                    //6.0 get csq info
-                    sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
-                    //6.1 check the dialing result
-                    if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
-                    {
-                        char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
-                        strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
-                        ret = system(cmdLine);
-                    }else
-                    {
-                        DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
-                        goto looper_dialing_exit;
-                    }
+                    DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
+                }
+
+            }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
+            {
+                //3GNET
+                ret |= 0x10;
+                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
+                {
+                    DEBUG_PRINTF("CH-U dialing end.");
+                }else
+                {
+                    DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
+                }
+            }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
+            {
+                //CTNET
+                ret = 0x100;
+                //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
+                //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);
+                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", PARSEACK_OK, 2, 2))
+                {
+                    DEBUG_PRINTF("CH-T dialing end.");
+                }else
+                {
+                    DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
                 }
             }
+
+//looper_check_stage_getip:
+            //6.1 check the dialing result
+            if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
+            {
+                char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
+                strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
+                ret = system(cmdLine);
+            }else
+            {
+                DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
+                goto looper_dialing_exit;
+            }
+
         }
     }
 
@@ -1128,17 +1171,22 @@ looper_dialing_init:
     }
     DEBUG_PRINTF();
     //7.1 check for the internet access
+//looper_check_stage_dialingresult:
     if(!ret)
     {
         ret = checkInternetAccess();
     }
 
 looper_dialing_exit:
-    QByteArray result("");
-    //debug
+    //get some other info: signalquality & temperature
+    sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
+    sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
+
     showDialingResult(dialingResult);
-    //debug end
+
+    QByteArray result("");
     emit signalDialingEnd(result);
+
     return ret;
 }
 
