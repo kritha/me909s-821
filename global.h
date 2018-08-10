@@ -3,27 +3,28 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.5.5"
+#define BOXV3CHECKAPP_VERSION "V0.6.0"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
-#define BOXV3_BAUDRATE_UART 9600
+#define BOXV3_BAUDRATE_UART 115200
 #define BOXV3_ERRMSGBUF_LEN 1024
 #define BUF_TMP_LENGTH    1024
 #define AT_ACK_RESULT_INFO_LENGTH 128
 
-#define AT_CMD_LENGTH_MAX 32
+#define AT_CMD_LENGTH_MAX 64
 #define AT_CMD_SUFFIX   "\r\n"
 
 #define LTE_MODULE_NETNODENAME "usb0"
 #define INTERNET_ACCESS_POINT  "8.8.8.8"
 #define NET_ACCESS_FAILEDCNT_MAX    2
 
-#if 0
-#define TIMESPEND_WHOLE_DIALING   24      //s
-#else
-#define TIMESPEND_WHOLE_DIALING   3      //s
-#endif
+#define NET_ACCESS_LOG_DIR "/tmp/lte"
+#define NET_ACCESS_LOG_FILENAME "logLTE.txt"
+
+#define TIMESPEND_WHOLE_DIALING   30      //s
+
 #define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
 
 /*
@@ -89,6 +90,13 @@ typedef struct _dialingResult{
     char pingAck[AT_ACK_RESULT_INFO_LENGTH];
 }dialingResult_t;
 
+enum connectTimeStatus{
+    LTE_START_DIALING,
+    LTE_END_DIALING,
+    LTE_CONNECTED,
+    LTE_DISCONNECTED,
+    LTE_CONNECTED_UPTIME,
+};
 extern errInfo_t errInfo;
 
 #endif // GLOBAL_H

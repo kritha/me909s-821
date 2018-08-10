@@ -866,7 +866,7 @@ int lteDialing::slotAlwaysRecvMsgForDebug()
         ERR_RECORDER("Unable to open device");
     }else
     {
-        ret = setSerialPortNodeProperty(fd, 8, 1, 'N', B9600);
+        ret = setSerialPortNodeProperty(fd, 8, 1, 'N', BOXV3_BAUDRATE_UART);
         /*some sets are wrong*/
         if(0 != ret)
         {
@@ -986,14 +986,14 @@ looper_dialing_init:
                     {
                         tryOnceFlag = 1;
                         DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_OK, 3, 2);
-                        sleep(3);
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_OK, 2, 2);
+                        sleep(4);
 #if 0
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_OK, 1, 2);
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_OK, 2, 2);
                         sleep(1);
 #endif
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_OK, 3, 2);
-                        sleep(3);
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_OK, 2, 2);
+                        sleep(4);
                         continue;
                     }else
                     {

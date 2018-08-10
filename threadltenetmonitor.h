@@ -2,6 +2,10 @@
 #define THREADLTENETMONITOR_H
 #include <QThread>
 #include <QTimer>
+#include <QDateTime>
+
+#include <QDir>
+#include <QFile>
 
 #include "global.h"
 
@@ -20,6 +24,9 @@ public slots:
     void slotDialingEnd(QByteArray array);
 protected:
     void run(void);
+private:
+    int createLogFile(QString dirFullPath);
+    int writeLogLTE(connectTimeStatus c);
 };
 
 #endif // THREADLTENETMONITOR_H

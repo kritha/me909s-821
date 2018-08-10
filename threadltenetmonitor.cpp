@@ -59,7 +59,11 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
         {
             failedCnt++;
             DEBUG_PRINTF("###########LTE net's access failed at first time.");
+            writeLogLTE(LTE_DISCONNECTED);
             emit signalStartDialing(0);
+        }else
+        {
+            writeLogLTE(LTE_CONNECTED);
         }
     }
     else
@@ -69,6 +73,7 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
         {
             failedCnt++;
             DEBUG_PRINTF("###########LTE net's access failed.");
+            writeLogLTE(LTE_DISCONNECTED);
             if(failedCnt > NET_ACCESS_FAILEDCNT_MAX)
             {
                 DEBUG_PRINTF("Warning: Net access failed so many times that have to restart dialing!");
@@ -77,6 +82,7 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
             }
         }else
         {
+            writeLogLTE(LTE_CONNECTED);
             DEBUG_PRINTF("###########LTE net's access looks good.");
         }
     }
@@ -95,6 +101,11 @@ void threadLTENetMonitor::slotDialingEnd(QByteArray array)
 void threadLTENetMonitor::run()
 {
     QTimer checkTimer;
+
+
+    //0. create log file
+    this->createLogFile(NET_ACCESS_LOG_DIR);
+
     QObject::connect(&checkTimer, &QTimer::timeout, this, &threadLTENetMonitor::slotNetStateMonitor);
 
     /*connect below to prevent to access dialing process thread multiple times at the same time*/
@@ -107,4 +118,108 @@ void threadLTENetMonitor::run()
     checkTimer.start(TIMEINTERVAL_LTE_NET_CHECK);
 
     exec();
+}
+
+int threadLTENetMonitor::createLogFile(QString dirFullPath)
+{
+    int ret = 0;
+
+    if(dirFullPath.isEmpty())
+    {
+        ret = -EINVAL;
+        ERR_RECORDER(NULL);
+        DEBUG_PRINTF();
+    }else
+    {
+        //clean log dir
+        QString cmd("rm -rf ");
+        cmd += dirFullPath;
+        system(cmd.toLocal8Bit().data());
+        //create log dir
+        cmd = QString("mkdir -p ");
+        cmd += dirFullPath;
+        system(cmd.toLocal8Bit().data());
+        //create log file
+        dirFullPath += "/";
+        dirFullPath += NET_ACCESS_LOG_FILENAME;
+        cmd = QString("touch ");
+        cmd += dirFullPath;
+        ret = system(cmd.toLocal8Bit().data());
+        //write item info
+        cmd = QString("echo 'connect\t\t\tdisconnect\t\t\tconnectMax\n' > ");
+        cmd += dirFullPath;
+        system(cmd.toLocal8Bit().data());
+    }
+
+    return ret;
+}
+
+int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
+{
+    int ret = 0;
+    QString cmd;
+    volatile static connectTimeStatus lastTimeStatus;
+
+    switch(c)
+    {
+    case LTE_CONNECTED:
+    {
+        if(LTE_CONNECTED != lastTimeStatus)
+        {
+            //-e 表示开启转义, "\c"表示不换行
+            cmd = QString("echo -e ");
+            cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
+            cmd += QString(" >> ");
+            cmd += QString(NET_ACCESS_LOG_DIR);
+            cmd += QString("/");
+            cmd += QString(NET_ACCESS_LOG_FILENAME);
+            cmd += QString(" \"\\c\"");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("---cmd: %s", cmd.toLocal8Bit().data());
+        }else
+        {
+            DEBUG_PRINTF("Already has been written LTE_CONNECTED.");
+        }
+        break;
+    }
+    case LTE_DISCONNECTED:
+    {
+        if(LTE_CONNECTED != lastTimeStatus)
+        {
+            //-e 表示开启转义, \c表示不换行
+            cmd = QString("echo -e \t\t\t");
+            cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
+            cmd += QString(" >> ");
+            cmd += QString(NET_ACCESS_LOG_DIR);
+            cmd += QString("/");
+            cmd += QString(NET_ACCESS_LOG_FILENAME);
+            cmd += QString(" \"\\c\"");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
+        }else
+        {
+            DEBUG_PRINTF("Already has been written LTE_DISCONNECTED.");
+            break;
+        }
+    }
+    case LTE_CONNECTED_UPTIME:
+    {
+        cmd = QString("echo -e \t\t\t");
+        cmd += QString(" >> ");
+        cmd += QString(NET_ACCESS_LOG_DIR);
+        cmd += QString("/");
+        cmd += QString(NET_ACCESS_LOG_FILENAME);
+        system(cmd.toLocal8Bit().data());
+        DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
+        break;
+    }
+    default:
+    {
+        break;
+    }
+    }
+
+    lastTimeStatus = c;
+
+    return ret;
 }
