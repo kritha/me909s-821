@@ -523,6 +523,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.atAck, linep, sizeof(info.atAck));
+                emit signalDisplayDialingStage(STAGE_MODULE, QString(info.atAck));
             }else
             {
                 bzero(info.atAck, sizeof(info.atAck));
@@ -543,6 +544,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.cpinAck, linep, sizeof(info.cpinAck));
+                emit signalDisplayDialingStage(STAGE_SLOT, QString(info.cpinAck));
             }else
             {
                 bzero(info.cpinAck, sizeof(info.cpinAck));
@@ -619,6 +621,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.sysinfoexAck, linep, sizeof(info.sysinfoexAck));
+                emit signalDisplayDialingStage(STAGE_SERVICE, QString(info.sysinfoexAck));
 #if 0
                 //check the service status
                 delim = cutAskFromKeyLine(linep, 0);
@@ -681,11 +684,32 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.copsAck, linep, sizeof(info.copsAck));
+
+                if(strstr(linep, "CMCC") || strstr(linep, "CHINA MOBILE"))
+                {//CMNET
+                    info.privateCh = PARSEACK_COPS_CH_M;
+                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString("CMNET"));
+                }else if(strstr(linep, "CHN-CT"))
+                {//CTNET
+                    info.privateCh = PARSEACK_COPS_CH_T;
+                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString("CTNET"));
+                }else if(strstr(linep, "CHN-UNICOM"))
+                {//3GNET
+                    info.privateCh = PARSEACK_COPS_CH_U;
+                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString("3GNET"));
+                }else
+                {
+                    info.privateCh = 0;
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("");
+                }
             }else
             {
                 bzero(info.copsAck, sizeof(info.copsAck));
                 ret = -ENODATA;
                 ERR_RECORDER(NULL);
+                DEBUG_PRINTF("no +COPS:");
             }
             break;
         }
@@ -699,10 +723,10 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                 char* chp = getKeyLineFromBuf(linep, (char*)"1");
                 if(chp)
                 {//channel 1
-                    ret = 1;
+                    info.privateCh = 1;
                 }else
                 {//channel 0
-                    ret = 0;
+                    info.privateCh = 0;
                 }
             }else
             {
@@ -712,6 +736,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             }
             break;
         }
+#if 0
         case PARSEACK_COPS_CH_M:
         {
             linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
@@ -722,6 +747,9 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                 {
                     ret = -ENODATA;
                     ERR_RECORDER(NULL);
+                }else
+                {
+                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString(info.copsAck));
                 }
             }else
             {
@@ -741,6 +769,9 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                 {
                     ret = -ENODATA;
                     ERR_RECORDER(NULL);
+                }else
+                {
+                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString(info.copsAck));
                 }
             }else
             {
@@ -757,7 +788,12 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             {
                 strncpy(info.copsAck, linep, sizeof(info.copsAck));
                 if(!strstr(linep, "CHN-UNICOM"))
+                {
                     ret = -ENODATA;
+                }else
+                {
+                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString(info.copsAck));
+                }
             }else
             {
                 bzero(info.copsAck, sizeof(info.copsAck));
@@ -766,12 +802,18 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             }
             break;
         }
+#endif
         case PARSEACK_CSQ:
         {
             linep = getKeyLineFromBuf(buf, (char*)"+CSQ:");
             if(linep)
             {
                 strncpy(info.csqAck, linep, sizeof(info.csqAck));
+                delim = cutAskFromKeyLine(linep, 0);
+                if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
+                {
+                    emit signalDisplayDialingStage(STAGE_SIGNAL, QString(info.csqAck));
+                }
             }else
             {
                 ret = -ENODATA;
@@ -786,6 +828,9 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.tempAck, linep, sizeof(info.tempAck));
+                emit signalDisplayDialingStage(STAGE_TEMP, QString(info.tempAck));
+                //delim = cutAskFromKeyLine(linep, 5);
+                //if(atoi(delim) < SIM_TEMP_VALUE_MAX);
             }else
             {
                 ret = -ENODATA;
@@ -804,6 +849,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                     ret = -ENODATA;
                 }else
                 {
+                    emit signalDisplayDialingStage(STAGE_DIALE, QString(info.qryAck));
                     DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
                     showBuf(linep, BUF_TMP_LENGTH);
                     DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
@@ -822,6 +868,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(len > 0)
             {
                 strncpy(info.ipinfo, buf, len);
+                emit signalDisplayDialingStage(STAGE_NET, QString(info.ipinfo));
             }else
             {
                 bzero(info.ipinfo, sizeof(info.ipinfo));
@@ -831,10 +878,11 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
         }
         case SPECIAL_PARSE_PING_RESULT:
         {
-            if(!len)
+            if(1 == len)
             {
                 strcpy(info.pingAck, "OK");
                 info.isDialedOk = 1;
+                //emit signalDisplayDialingStage(STAGE_NET, QString(info.pingAck));
             }else
             {
                 ret = -ENODATA;
@@ -939,9 +987,13 @@ int lteDialing::checkInternetAccess(void)
 
     ret = system(cmdLine);
     if(ret)
+    {
         ERR_RECORDER("ping failed.");
+    }else
+    {
+        parseATcmdACKbyLineOrSpecialCmd(dialingResult, (char*)"!ret", 1, SPECIAL_PARSE_PING_RESULT);
+    }
 
-    parseATcmdACKbyLineOrSpecialCmd(dialingResult, (char*)"ret", ret, SPECIAL_PARSE_PING_RESULT);
     DEBUG_PRINTF("ping ret: %d", ret);
 
     return ret;
@@ -1117,9 +1169,11 @@ looper_check_stage_devicenode:
     if(ret)
     {
         ret = -ENODEV;
+        emit signalDisplayDialingStage(STAGE_NODE, QString("NOdeviceNode"));
         printf("Error: Can't access MT device node.");
     }else
     {
+        emit signalDisplayDialingStage(STAGE_NODE, QString(nodePath));
         DEBUG_PRINTF("Success: access MT device node.");
         //1. check available for module
 //looper_check_stage_ltemodule:
@@ -1163,7 +1217,9 @@ looper_check_stage_simslot:
                     {
                         DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
 
-                        currentChannel = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                        currentChannel = dialingResult.privateCh;
+                        DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
                         switch(currentChannel)
                         {
                         case 0:
@@ -1229,10 +1285,12 @@ looper_check_stage_simslot:
             ret = 0;
             //4 get network operator
 //looper_check_stage_dialingoperator:
-            if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_M, 2, 2))
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS, 2, 2);
+            DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
+            switch(dialingResult.privateCh)
             {
-                //CMNET
-                ret |= 0x1;
+            case PARSEACK_COPS_CH_M:
+            {
                 if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
                 {
                     DEBUG_PRINTF("CMCC dialing end.");
@@ -1240,22 +1298,10 @@ looper_check_stage_simslot:
                 {
                     DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
                 }
-
-            }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_U, 2, 2))
+                break;
+            }
+            case PARSEACK_COPS_CH_T:
             {
-                //3GNET
-                ret |= 0x10;
-                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
-                {
-                    DEBUG_PRINTF("CH-U dialing end.");
-                }else
-                {
-                    DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
-                }
-            }else if(!sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS_CH_T, 2, 2))
-            {
-                //CTNET
-                ret = 0x100;
                 //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
                 //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);
                 if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", PARSEACK_OK, 2, 2))
@@ -1265,6 +1311,25 @@ looper_check_stage_simslot:
                 {
                     DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
                 }
+                break;
+            }
+            case PARSEACK_COPS_CH_U:
+            {
+                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
+                {
+                    DEBUG_PRINTF("CH-U dialing end.");
+                }else
+                {
+                    DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
+                }
+                break;
+            }
+            default:
+            {
+                DEBUG_PRINTF("Didn't dialing at all.");
+                ERR_RECORDER(NULL);
+                break;
+            }
             }
 
 //looper_check_stage_getip:
@@ -1283,7 +1348,7 @@ looper_check_stage_simslot:
     }
 
     //7.0 parse if has a ip
-    if(!ret)
+    if(1)
     {
         QString ipString;
         getNativeNetworkInfo(QString((char*)LTE_MODULE_NETNODENAME), ipString);
@@ -1292,7 +1357,7 @@ looper_check_stage_simslot:
     DEBUG_PRINTF();
     //7.1 check for the internet access
 //looper_check_stage_dialingresult:
-    if(!ret)
+    if(0 == ret)
     {
         ret = checkInternetAccess();
     }
@@ -1317,6 +1382,7 @@ threadDialing::threadDialing()
     connect(&workerThread, &QThread::finished, worker, &QObject::deleteLater);
     connect(this, &threadDialing::signalStartDialing, worker, &lteDialing::slotHuaWeiLTEmoduleDialingProcess);
     connect(worker, &lteDialing::signalDialingEnd, this, &threadDialing::handleResults);
+    connect(worker, &lteDialing::signalDisplayDialingStage, this, &threadDialing::signalDisplayDialingStage);
     workerThread.start();
 }
 
@@ -1340,4 +1406,9 @@ void threadDialing::slotStartDialing(char reset)
 {
     reset = 0;
     emit signalStartDialing(reset);
+}
+
+void threadDialing::slotDisplayDialingStage(char stage, QString result)
+{
+    emit signalDisplayDialingStage(stage, result);
 }

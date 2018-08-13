@@ -14,12 +14,14 @@ TEMPLATE = app
 SOURCES += main.cpp \
     global.c \
     threaddialing.cpp \
-    threadltenetmonitor.cpp
+    threadltenetmonitor.cpp \
+    mainwindow.cpp
 
 HEADERS += \
     global.h \
     threaddialing.h \
-    threadltenetmonitor.h
+    threadltenetmonitor.h \
+    mainwindow.h
 
 FORMS += \
     mainwindow.ui

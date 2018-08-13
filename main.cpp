@@ -1,9 +1,11 @@
+#include <QApplication>
 #include <QCoreApplication>
 #include <QCommandLineOption>
 #include <QCommandLineParser>
 #include "threaddialing.h"
 #include "threadltenetmonitor.h"
 #include "global.h"
+#include "mainwindow.h"
 
 static QString cmdLineParser(QCoreApplication& a)
 {
@@ -27,15 +29,18 @@ static QString cmdLineParser(QCoreApplication& a)
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication a(argc, argv);
+    QApplication a(argc, argv);
 
-
+    MainWindow w;
     threadDialing dialing;
     threadLTENetMonitor monitor;
 
     QObject::connect(&monitor, &threadLTENetMonitor::signalStartDialing, &dialing, &threadDialing::slotStartDialing);
     /*this connect for prevent multiple access dialing process at the same time*/
     QObject::connect(&dialing, &threadDialing::signalDialingEnd, &monitor, &threadLTENetMonitor::slotDialingEnd);
+
+    //display
+    QObject::connect(&dialing, &threadDialing::signalDisplayDialingStage, &w, &MainWindow::slotDisplayDialingStage);
 
     int ret = 0;
     int fd = -1;
@@ -52,6 +57,7 @@ int main(int argc, char *argv[])
         if(argc < 2)
         {
             monitor.start();
+            w.showFullScreen();
         }else
         {
             ret = dialing.getWorkerObject()->initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);

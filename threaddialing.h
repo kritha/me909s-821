@@ -50,6 +50,7 @@ public:
     void showDialingResult(dialingResult_t& info);
 signals:
     void signalDialingEnd(QByteArray array);
+    void signalDisplayDialingStage(char stage, QString result);
 public slots:
     int slotAlwaysRecvMsgForDebug(void);
     int slotHuaWeiLTEmoduleDialingProcess(char resetFlag);
@@ -69,9 +70,11 @@ public:
 public slots:
     void handleResults(const QByteArray array);
     void slotStartDialing(char reset);
+    void slotDisplayDialingStage(char stage, QString result);
 signals:
     void signalStartDialing(char);
     void signalDialingEnd(QByteArray array);
+    void signalDisplayDialingStage(char stage, QString result);
 private:
     lteDialing* worker;
 };

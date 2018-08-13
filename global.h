@@ -5,13 +5,15 @@
 #include <strings.h>
 #include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.7.0"
+#define BOXV3CHECKAPP_VERSION "V0.7.8"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_BAUDRATE_UART 115200
 #define BOXV3_ERRMSGBUF_LEN 1024
 #define BUF_TMP_LENGTH    1024
 #define AT_ACK_RESULT_INFO_LENGTH 128
+#define SIM_CSQ_SIGNAL_MIN  17
+#define SIM_TEMP_VALUE_MAX  650
 
 #define AT_CMD_LENGTH_MAX 64
 #define AT_CMD_SUFFIX   "\r\n"
@@ -70,17 +72,25 @@ enum parseEnum{
     SPECIAL_PARSE_PING_RESULT,
 };
 
-enum dialingStage{
-    NOT_START_DIALING,
-    STAGE1_AT_MODULE_OK,
-    STAGE1_AT_MODULE_FAILED,
-    DIALING_END_SUCCESS,
-    DIALING_END_FAILED,
+enum checkStageLTE{
+    STAGE_UNKNOWN,
+    STAGE_NODE,
+    STAGE_MODULE,
+    STAGE_SLOT,
+    STAGE_SERVICE,
+    STAGE_OPERATOR,
+    STAGE_TEMP,
+    STAGE_DIALE,
+    STAGE_SIGNAL,
+    STAGE_NET,
+    STAGEEND_SUCCESS,
+    STAGEEND_FAILED,
 };
 
 typedef struct _dialingResult{
     char isDialedOk;
-    enum dialingStage stage;
+    enum checkStageLTE stage;
+    char privateCh;
     char atAck[AT_ACK_RESULT_INFO_LENGTH];
     char atiAck[AT_ACK_RESULT_INFO_LENGTH];
     char cpinAck[AT_ACK_RESULT_INFO_LENGTH];
