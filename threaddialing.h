@@ -44,6 +44,7 @@ public:
     int sendCMDandCheckRecvMsg(int fd, char *cmd, parseEnum key, int retryCnt, int RDndelay);
     int tryBestToCleanSerialIO(int fd);
     char *getKeyLineFromBuf(char *buf, char *key);
+    char *cutAskFromKeyLine(char* keyLine, int argIndex);
     int checkInternetAccess();
     int getNativeNetworkInfo(QString ifName, QString &ipString);
     void showDialingResult(dialingResult_t& info);

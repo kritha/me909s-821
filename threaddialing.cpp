@@ -306,7 +306,7 @@ int lteDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
     DEBUG_PRINTF("####################################");
     for(i=0; i<=10; i++)
     {
-        DEBUG_PRINTF("#######iturn:%d\n", i);
+        DEBUG_PRINTF("###rdCnt:%d\n", i);
         //wait a while for hw before read
         usleep(500);
         //use select timeval to monitor read-timeout and read-end
@@ -444,6 +444,39 @@ char* lteDialing::getKeyLineFromBuf(char* buf, char* key)
     return token;
 }
 
+/**
+ * @brief lteDialing::cutAskFromKeyLine
+ * NOtes: this func can just be used once for one keyLine, otherwise there will be a segmentfault
+ * @param keyLine
+ * @param argIndex : 0 - n
+ * @return string pointer of the argIndex if it's found, and NULL when failed
+ */
+char *lteDialing::cutAskFromKeyLine(char *keyLine, int argIndex)
+{
+    char* token = NULL;
+
+    if(argIndex < 0) argIndex = 0;
+
+    if(!keyLine)
+    {
+        DEBUG_PRINTF("NULL argument.");
+        ERR_RECORDER(NULL);
+    }else
+    {
+        //get the delim string after ":"
+        strtok(keyLine, ":");
+        token = strtok(NULL, ":");
+        //get the delim string before ","
+        token = strtok(token, ",");
+        while((!token) && (--argIndex >= 0))
+        {
+            token = strtok(NULL, ",");
+        }
+    }
+
+    return token;
+}
+
 void lteDialing::initDialingState(dialingResult_t &info)
 {
     bzero(&info, sizeof(dialingResult_t));
@@ -453,8 +486,9 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
 {
     int ret = 0;
     char* linep = NULL;
+    char* delim = NULL;
 
-    if(!buf)
+    if(!buf || (len <= 0))
     {
         ERR_RECORDER(NULL);
         DEBUG_PRINTF();
@@ -516,6 +550,8 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             }
             break;
         }
+#if 0
+        /*ChinaT: +REG:0, 2   but is works well. So drop it*/
         case PARSEACK_REG:
         {
             /* 1(或5) 表示数据业务可以使用；
@@ -561,6 +597,84 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             }
             break;
         }
+#endif
+        case PARSEACK_SYSINFOEX:
+        {
+            /*
+             * <srv_status>：表示系统服务状态。
+                        0  无服务
+                        1  服务受限
+                        2  服务有效
+                        3  区域服务受限
+                        4  省电或休眠状态
+             * <srv_domain>：表示系统服务域。
+                    0  无服务
+                    1  仅 CS 服务
+                    2  仅 PS 服务
+                    3  PS+CS 服务
+                    4  CS、PS 均未注册，并处于搜索状态
+                    255  CDMA（暂不支持）
+            */
+            linep = getKeyLineFromBuf(buf, (char*)"^SYSINFOEX:");
+            if(linep)
+            {
+                strncpy(info.sysinfoexAck, linep, sizeof(info.sysinfoexAck));
+#if 0
+                //check the service status
+                delim = cutAskFromKeyLine(linep, 0);
+                switch(atoi(delim))
+                {
+                case 0:
+                case 1:
+                case 3:
+                case 4:
+                {
+                    ret = -ENOPROTOOPT;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("Error: SIM no service");
+                    break;
+                }
+                case 2:
+                {
+                    ret = 0;
+                    DEBUG_PRINTF("Success: SIM in avaliable service status.");
+                    break;
+                }
+                default:
+                {
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("Error: SIM unknown service status.");
+                    break;
+                }
+                }
+#endif
+                //check the service domain
+                delim = cutAskFromKeyLine(linep, 1);
+                switch(atoi(delim))
+                {
+                case 0:
+                {
+                    ret = -ENOPROTOOPT;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("Error: SIM no service");
+                    break;
+                }
+                default:
+                {
+                    ret = 0;
+                    DEBUG_PRINTF("Success: SIM in avaliable service domain.");
+                    break;
+                }
+                }
+            }else
+            {
+                bzero(info.sysinfoexAck, sizeof(info.sysinfoexAck));
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+            }
+            break;
+        }
         case PARSEACK_COPS:
         {
             linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
@@ -571,6 +685,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             {
                 bzero(info.copsAck, sizeof(info.copsAck));
                 ret = -ENODATA;
+                ERR_RECORDER(NULL);
             }
             break;
         }
@@ -593,6 +708,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             {
                 bzero(info.switchAck, sizeof(info.switchAck));
                 ret = -ENODATA;
+                ERR_RECORDER(NULL);
             }
             break;
         }
@@ -603,7 +719,10 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             {
                 strncpy(info.copsAck, linep, sizeof(info.copsAck));
                 if((!strstr(linep, "CMCC")) && (!strstr(linep, "CHINA MOBILE")))
+                {
                     ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
             }else
             {
                 bzero(info.copsAck, sizeof(info.copsAck));
@@ -619,7 +738,10 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             {
                 strncpy(info.copsAck, linep, sizeof(info.copsAck));
                 if(!strstr(linep, "CHN-CT"))
+                {
                     ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
             }else
             {
                 bzero(info.copsAck, sizeof(info.copsAck));
@@ -786,6 +908,7 @@ int lteDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int ret
         {
             ret = recvMsgFromATModuleAndParsed(fd, key, RDndelay);
             if(!ret) break;
+            //else sleep(1);
         }else
             ERR_RECORDER(NULL);
     }
@@ -838,8 +961,7 @@ int lteDialing::getNativeNetworkInfo(QString ifName, QString& ipString)
     {
         ret = -EINVAL;
         DEBUG_PRINTF("interface name is empty.");
-    }
-    else
+    }else
     {
         //clean ip string
         ipString = QString("");
@@ -893,6 +1015,8 @@ void lteDialing::showDialingResult(dialingResult_t &info)
     showBuf(info.atiAck, sizeof(info.atiAck));
     printf("CPIN:");
     showBuf(info.cpinAck, sizeof(info.cpinAck));
+    printf("SYSINFOEX:");
+    showBuf(info.sysinfoexAck, sizeof(info.sysinfoexAck));
     printf("SWITCH:");
     showBuf(info.switchAck, sizeof(info.switchAck));
     printf("CREG:");
@@ -1056,8 +1180,8 @@ looper_check_stage_simslot:
                         }
                         default:
                         {
-                            DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 1.");
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
                             sleep(4);
                             break;
                         }
@@ -1091,17 +1215,14 @@ looper_check_stage_simslot:
     {
         //3. check data service for SIM
 //looper_check_stage_dataservice:
-        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CREG?", PARSEACK_REG, 2, 2);
+
+        //ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CREG?", PARSEACK_REG, 1, 2);
+        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SYSINFOEX", PARSEACK_SYSINFOEX, 2, 1);
         if(ret)
         {
-            ERR_RECORDER("can't get data service.");
-            goto looper_dialing_exit;
+            DEBUG_PRINTF("Error: the SIM card has no data service.");
+            ret = -ENODATA;
         }else
-        {
-            ;/*ChinaT: +REG:0, 2   but is works well.*/
-        }
-
-        if(1)
         {
             DEBUG_PRINTF("Success: the SIM card has data service.");
 
@@ -1158,12 +1279,11 @@ looper_check_stage_simslot:
                 DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
                 goto looper_dialing_exit;
             }
-
         }
     }
 
     //7.0 parse if has a ip
-    if(1)
+    if(!ret)
     {
         QString ipString;
         getNativeNetworkInfo(QString((char*)LTE_MODULE_NETNODENAME), ipString);
