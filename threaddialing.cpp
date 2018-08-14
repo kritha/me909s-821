@@ -1,11 +1,18 @@
 #include "threaddialing.h"
 
-lteDialing::lteDialing()
+
+threadDialing::threadDialing()
 {
+    fd = -1;
+    isDialing = 0;
+    bzero(nodePath, BOXV3_NODEPATH_LENGTH);
     initDialingState(dialingResult);
+
+    QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler);
+    moveToThread(this);
 }
 
-void lteDialing::showBuf(char *buf, int len)
+void threadDialing::showBuf(char *buf, int len)
 {
     buf[len -1] = '\0';
     for(int i=0; i<len; i++)
@@ -16,7 +23,7 @@ void lteDialing::showBuf(char *buf, int len)
 }
 
 
-void lteDialing::showErrInfo(errInfo_t info)
+void threadDialing::showErrInfo(errInfo_t info)
 {
     unsigned int i = 0;
     printf("Error:");
@@ -37,7 +44,7 @@ void lteDialing::showErrInfo(errInfo_t info)
  * @parity       效验类型(取值N/E/O/S)
  * exec success: return 0; failed: return !0(with errno)
 */
-int lteDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed)
+int threadDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed)
 {
     int ret = 0;
     struct termios uartAttr[2];
@@ -173,7 +180,7 @@ int lteDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits, in
 }
 
 
-int lteDialing::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate, int tryCnt, int nsec)
+int threadDialing::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate, int tryCnt, int nsec)
 {
     int ret = 0, i = 0;
     struct timeval tm;
@@ -214,15 +221,18 @@ int lteDialing::initSerialPortForTtyLte(int*fdp, char* nodePath, int baudRate, i
     return ret;
 }
 
-void lteDialing::exitSerialPortFromTtyLte(int* fd)
+void threadDialing::exitSerialPortFromTtyLte(int* fd)
 {
-    close(*fd);
-    *fd = -1;
+    if(*fd > 2)
+    {
+        close(*fd);
+        *fd = -1;
+    }
 }
 
 
 
-int lteDialing::waitWriteableForFd(int fd, int nsec)
+int threadDialing::waitWriteableForFd(int fd, int nsec)
 {
     int ret = 0;
     fd_set writefds;
@@ -246,7 +256,7 @@ int lteDialing::waitWriteableForFd(int fd, int nsec)
     return ret;
 }
 
-int lteDialing::waitReadableForFd(int fd, struct timeval* tm)
+int threadDialing::waitReadableForFd(int fd, struct timeval* tm)
 {
     int ret = 0;
     fd_set readfds;
@@ -264,7 +274,7 @@ int lteDialing::waitReadableForFd(int fd, struct timeval* tm)
 
     return ret;
 }
-int lteDialing::sendCMDofAT(int fd, char *cmd, int len)
+int threadDialing::sendCMDofAT(int fd, char *cmd, int len)
 {
     int ret = 0, i = 0;
     char cmdStr[AT_CMD_LENGTH_MAX] = {};
@@ -292,7 +302,7 @@ int lteDialing::sendCMDofAT(int fd, char *cmd, int len)
     return ret;
 }
 
-int lteDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
+int threadDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
 {
     int ret=0, i=0;
     char ch = 0;
@@ -371,7 +381,7 @@ int lteDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
 }
 
 
-int lteDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* nodePath, char* devNodePath, char* cmd)
+int threadDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* nodePath, char* devNodePath, char* cmd)
 {
     int ret = 0;
 
@@ -398,7 +408,7 @@ int lteDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* no
     return ret;
 }
 
-int lteDialing::parseConfigFile(char* nodePath, int bufLen, char *key)
+int threadDialing::parseConfigFile(char* nodePath, int bufLen, char *key)
 {
     int ret = 0;
     if(!nodePath) return -EINVAL;
@@ -418,7 +428,7 @@ int lteDialing::parseConfigFile(char* nodePath, int bufLen, char *key)
     return ret;
 }
 
-char* lteDialing::getKeyLineFromBuf(char* buf, char* key)
+char* threadDialing::getKeyLineFromBuf(char* buf, char* key)
 {
     char* token = NULL;
     const char ss[2] = "\n";
@@ -445,13 +455,13 @@ char* lteDialing::getKeyLineFromBuf(char* buf, char* key)
 }
 
 /**
- * @brief lteDialing::cutAskFromKeyLine
+ * @brief threadDialing::cutAskFromKeyLine
  * NOtes: this func can just be used once for one keyLine, otherwise there will be a segmentfault
  * @param keyLine
  * @param argIndex : 0 - n
  * @return string pointer of the argIndex if it's found, and NULL when failed
  */
-char *lteDialing::cutAskFromKeyLine(char *keyLine, int argIndex)
+char *threadDialing::cutAskFromKeyLine(char *keyLine, int argIndex)
 {
     char* token = NULL;
 
@@ -477,12 +487,12 @@ char *lteDialing::cutAskFromKeyLine(char *keyLine, int argIndex)
     return token;
 }
 
-void lteDialing::initDialingState(dialingResult_t &info)
+void threadDialing::initDialingState(dialingResult_t &info)
 {
     bzero(&info, sizeof(dialingResult_t));
 }
 
-int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf, int len, parseEnum e)
+int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf, int len, parseEnum e)
 {
     int ret = 0;
     char* linep = NULL;
@@ -523,7 +533,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.atAck, linep, sizeof(info.atAck));
-                emit signalDisplayDialingStage(STAGE_MODULE, QString(info.atAck));
+                emit signalDisplay(STAGE_MODULE, QString(info.atAck));
             }else
             {
                 bzero(info.atAck, sizeof(info.atAck));
@@ -544,7 +554,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.cpinAck, linep, sizeof(info.cpinAck));
-                emit signalDisplayDialingStage(STAGE_SLOT, QString(info.cpinAck));
+                emit signalDisplay(STAGE_SLOT, QString(info.cpinAck));
             }else
             {
                 bzero(info.cpinAck, sizeof(info.cpinAck));
@@ -621,7 +631,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.sysinfoexAck, linep, sizeof(info.sysinfoexAck));
-                emit signalDisplayDialingStage(STAGE_SERVICE, QString(info.sysinfoexAck));
+                emit signalDisplay(STAGE_SERVICE, QString(info.sysinfoexAck));
 #if 0
                 //check the service status
                 delim = cutAskFromKeyLine(linep, 0);
@@ -688,15 +698,15 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                 if(strstr(linep, "CMCC") || strstr(linep, "CHINA MOBILE"))
                 {//CMNET
                     info.privateCh = PARSEACK_COPS_CH_M;
-                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString("CMNET"));
+                    emit signalDisplay(STAGE_OPERATOR, QString("CMNET"));
                 }else if(strstr(linep, "CHN-CT"))
                 {//CTNET
                     info.privateCh = PARSEACK_COPS_CH_T;
-                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString("CTNET"));
+                    emit signalDisplay(STAGE_OPERATOR, QString("CTNET"));
                 }else if(strstr(linep, "CHN-UNICOM"))
                 {//3GNET
                     info.privateCh = PARSEACK_COPS_CH_U;
-                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString("3GNET"));
+                    emit signalDisplay(STAGE_OPERATOR, QString("3GNET"));
                 }else
                 {
                     info.privateCh = 0;
@@ -812,7 +822,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                 delim = cutAskFromKeyLine(linep, 0);
                 if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
                 {
-                    emit signalDisplayDialingStage(STAGE_SIGNAL, QString(info.csqAck));
+                    emit signalDisplay(STAGE_SIGNAL, QString(info.csqAck));
                 }
             }else
             {
@@ -828,7 +838,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(linep)
             {
                 strncpy(info.tempAck, linep, sizeof(info.tempAck));
-                emit signalDisplayDialingStage(STAGE_TEMP, QString(info.tempAck));
+                emit signalDisplay(STAGE_TEMP, QString(info.tempAck));
                 //delim = cutAskFromKeyLine(linep, 5);
                 //if(atoi(delim) < SIM_TEMP_VALUE_MAX);
             }else
@@ -849,7 +859,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
                     ret = -ENODATA;
                 }else
                 {
-                    emit signalDisplayDialingStage(STAGE_DIALE, QString(info.qryAck));
+                    emit signalDisplay(STAGE_DIALE, QString(info.qryAck));
                     DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
                     showBuf(linep, BUF_TMP_LENGTH);
                     DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
@@ -868,7 +878,7 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
             if(len > 0)
             {
                 strncpy(info.ipinfo, buf, len);
-                emit signalDisplayDialingStage(STAGE_NET, QString(info.ipinfo));
+                emit signalDisplay(STAGE_NET, QString(info.ipinfo));
             }else
             {
                 bzero(info.ipinfo, sizeof(info.ipinfo));
@@ -903,8 +913,9 @@ int lteDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf
     return ret;
 }
 
-int lteDialing::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
+int threadDialing::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
 {
+    exitSerialPortFromTtyLte(fdp);
     int ret = 0;
     ret = parseConfigFile(nodePath, nodeLen, (char*)"NODENAME");
     if(!ret)
@@ -920,7 +931,7 @@ int lteDialing::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
  * TCOFLUSH     清除输出队列
  * TCIOFLUSH    清除输入、输出队列:
 */
-int lteDialing::tryBestToCleanSerialIO(int fd)
+int threadDialing::tryBestToCleanSerialIO(int fd)
 {
     int ret = 0;
 #if 1
@@ -944,7 +955,7 @@ int lteDialing::tryBestToCleanSerialIO(int fd)
  * retryCnt: how many times do you wanna do again when this func exec failed.
  * RDndelay: how long would you wait each time when recv every signal msg from MT
 */
-int lteDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int retryCnt, int RDndelay)
+int threadDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int retryCnt, int RDndelay)
 {
     int ret = 0, i=0;
 
@@ -963,7 +974,7 @@ int lteDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int ret
     return ret;
 }
 
-int lteDialing::checkInternetAccess(void)
+int threadDialing::checkInternetAccess(void)
 {
     int ret = 0;
     /* ping
@@ -1000,7 +1011,7 @@ int lteDialing::checkInternetAccess(void)
 }
 
 
-int lteDialing::getNativeNetworkInfo(QString ifName, QString& ipString)
+int threadDialing::getNativeNetworkInfo(QString ifName, QString& ipString)
 {
     int ret = 0;
 
@@ -1056,7 +1067,7 @@ int lteDialing::getNativeNetworkInfo(QString ifName, QString& ipString)
     return ret;
 }
 
-void lteDialing::showDialingResult(dialingResult_t &info)
+void threadDialing::showDialingResult(dialingResult_t &info)
 {
     DEBUG_PRINTF("#######################show begin#######################");
     printf("ret:%d\n", info.isDialedOk);
@@ -1089,7 +1100,7 @@ void lteDialing::showDialingResult(dialingResult_t &info)
 }
 
 
-int lteDialing::slotAlwaysRecvMsgForDebug()
+int threadDialing::slotAlwaysRecvMsgForDebug()
 {
     int ret = 0, fd = -1;
     char ch = 0;
@@ -1155,25 +1166,38 @@ int lteDialing::slotAlwaysRecvMsgForDebug()
 }
 
 
-int lteDialing::slotHuaWeiLTEmoduleDialingProcess(char resetFlag)
+int threadDialing::slotStartDialing(char resetFlag)
 {
     char probeCntFlag = 0, currentChannel = 0;
-    int ret = 0, fd = -1;
-    char nodePath[128] = {};
+    int ret = 0;
+    QString ipString;
+    QString notes;
 
+    if(isDialing++ > 1)
+    {
+        ret = -EAGAIN;
+        return ret;
+    }
 
 looper_check_stage_devicenode:
+    //stop to monitor the normal net
+    if(monitorTimer.isActive()) monitorTimer.stop();
+
+    notes = "Dialing start: ";
+    //notes += QDateTime::currentDateTime().toString("yyyy/MM/dd-HH:mm:ss");
+    notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+    emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
     initDialingState(dialingResult);
     //0. get nodePath and access permission
     ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
     if(ret)
     {
         ret = -ENODEV;
-        emit signalDisplayDialingStage(STAGE_NODE, QString("NOdeviceNode"));
+        emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
         printf("Error: Can't access MT device node.");
     }else
     {
-        emit signalDisplayDialingStage(STAGE_NODE, QString(nodePath));
+        emit signalDisplay(STAGE_NODE, QString(nodePath));
         DEBUG_PRINTF("Success: access MT device node.");
         //1. check available for module
 //looper_check_stage_ltemodule:
@@ -1202,7 +1226,55 @@ looper_check_stage_devicenode:
             }
 
             //2. check slot & access for SIM
-looper_check_stage_simslot:
+///looper_check_stage_switchslot:
+            if(4 > probeCntFlag)
+            {
+                if(!(probeCntFlag++/2))
+                {
+                    DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
+
+                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                    currentChannel = dialingResult.privateCh;
+                    DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
+                    switch(currentChannel)
+                    {
+                    case 0:
+                    {
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                        sleep(4);
+                        break;
+                    }
+                    case 1:
+                    {
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                        sleep(4);
+                        break;
+                    }
+                    default:
+                    {
+                        DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                        sleep(4);
+                        break;
+                    }
+                    }
+                }else
+                {
+                    DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
+                    /*
+                    * switch doesn't work that have to reset the MT
+                    * if MT hasn't been reset
+                    */
+
+                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
+                    DEBUG_PRINTF("wait reset for more than 10s...");
+                    sleep(10);
+                    //call back or kill itself and restart by sysinit:respawn service
+                    DEBUG_PRINTF("reset done. Start check MT again.");
+                    goto looper_check_stage_devicenode;
+                }
+            }
+//looper_check_stage_simslot:
             ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
             if(!ret)
             {
@@ -1211,54 +1283,6 @@ looper_check_stage_simslot:
             {
                 ret = -EAGAIN;
                 DEBUG_PRINTF("Warning: \"AT+CPIN?\" failed!");
-                if(3 > probeCntFlag)
-                {
-                    if(!(probeCntFlag++/2))
-                    {
-                        DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-
-                        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                        currentChannel = dialingResult.privateCh;
-                        DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
-                        switch(currentChannel)
-                        {
-                        case 0:
-                        {
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                            sleep(4);
-                            break;
-                        }
-                        case 1:
-                        {
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                            sleep(4);
-                            break;
-                        }
-                        default:
-                        {
-                            DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                            sleep(4);
-                            break;
-                        }
-                        }
-                        goto looper_check_stage_simslot;
-                    }else
-                    {
-                        DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
-                        /*
-                        * switch doesn't work that have to reset the MT
-                        * if MT hasn't been reset
-                        */
-
-                        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
-                        DEBUG_PRINTF("wait reset for more than 10s...");
-                        sleep(10);
-                        //call back or kill itself and restart by sysinit:respawn service
-                        DEBUG_PRINTF("reset done. Start check MT again.");
-                        goto looper_check_stage_devicenode;
-                    }
-                }
             }
         }
     }
@@ -1350,7 +1374,6 @@ looper_check_stage_simslot:
     //7.0 parse if has a ip
     if(1)
     {
-        QString ipString;
         getNativeNetworkInfo(QString((char*)LTE_MODULE_NETNODENAME), ipString);
         parseATcmdACKbyLineOrSpecialCmd(dialingResult, ipString.toLocal8Bit().data(), ipString.length(), SPECIAL_PARSE_IP_INFO);
     }
@@ -1367,48 +1390,61 @@ looper_dialing_exit:
     sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
     sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
 
+    exitSerialPortFromTtyLte(&fd);
+
     showDialingResult(dialingResult);
 
-    QByteArray result("");
-    emit signalDialingEnd(result);
+    emit signalDialingEnd(ipString);
+
+    if(ipString.isEmpty())
+    {
+        notes = "end failed: ";
+    }else
+    {
+        notes = "end success: ";
+    }
+    //notes += QDateTime::currentDateTime().toString("yyyy/MM/dd-HH:mm:ss");
+    notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+    emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
+
+    isDialing = 0;
+
+    //start normal net monitor
+    monitorTimer.start(6000);
 
     return ret;
 }
 
-threadDialing::threadDialing()
+int threadDialing::slotMonitorTimerHandler()
 {
-    worker = new lteDialing();
-    worker->moveToThread(&workerThread);
-    connect(&workerThread, &QThread::finished, worker, &QObject::deleteLater);
-    connect(this, &threadDialing::signalStartDialing, worker, &lteDialing::slotHuaWeiLTEmoduleDialingProcess);
-    connect(worker, &lteDialing::signalDialingEnd, this, &threadDialing::handleResults);
-    connect(worker, &lteDialing::signalDisplayDialingStage, this, &threadDialing::signalDisplayDialingStage);
-    workerThread.start();
+    int ret = 0;
+    //dynamic check
+    DEBUG_PRINTF("{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}");
+
+    //temperature
+    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
+
+    //SIM slot
+    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
+
+    //net access
+    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2);
+
+    if(ret)
+    {
+        monitorTimer.stop();
+        sleep(10);
+        slotStartDialing(0);
+    }
+
+    return ret;
 }
 
-threadDialing::~threadDialing()
+void threadDialing::run()
 {
-    workerThread.quit();
-    workerThread.wait();
+
+    QTimer monitorTimer;
+
+    exec();
 }
 
-lteDialing *threadDialing::getWorkerObject()
-{
-    return worker;
-}
-
-void threadDialing::handleResults(const QByteArray array)
-{
-    emit signalDialingEnd(array);
-}
-
-void threadDialing::slotStartDialing(char reset)
-{
-    reset = 0;
-    emit signalStartDialing(reset);
-}
-
-void threadDialing::slotDisplayDialingStage(char stage, QString result)
-{
-    emit signalDisplayDialingStage(stage, result);
-}

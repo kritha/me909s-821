@@ -18,10 +18,11 @@ signals:
     void signalStartDialing(char reset);
     void signalStopDialing(void);
     void signalResumeTimerAgain(int mSec);
+    void signalDisplay(char key, QString notes);
 public slots:
     int slotCheckInternetAccess(char priority = 0);
     int slotNetStateMonitor(void);
-    void slotDialingEnd(QByteArray array);
+    void slotDialingEnd(QString str);
 protected:
     void run(void);
 private:

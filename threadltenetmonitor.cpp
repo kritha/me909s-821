@@ -92,9 +92,9 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
     return ret;
 }
 
-void threadLTENetMonitor::slotDialingEnd(QByteArray array)
+void threadLTENetMonitor::slotDialingEnd(QString str)
 {
-    DEBUG_PRINTF("%s.", array.data());
+    DEBUG_PRINTF("ipStr: %s.", str.toLocal8Bit().data());
     emit signalResumeTimerAgain(TIMEINTERVAL_LTE_NET_CHECK);
 }
 
@@ -179,6 +179,10 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
             cmd += QString(NET_ACCESS_LOG_FILENAME);
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("---cmd: %s", cmd.toLocal8Bit().data());
+
+            cmd = "net well: ";
+            cmd += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            emit signalDisplay(STAGE_DISPLAY_NOTES, cmd);
         }else
         {
             DEBUG_PRINTF("Already has been written LTE_CONNECTED.");
@@ -187,7 +191,7 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
     }
     case LTE_DISCONNECTED:
     {
-        if(LTE_CONNECTED != lastTimeStatus)
+        if(LTE_DISCONNECTED != lastTimeStatus)
         {
             cmd = QString("echo ");
             cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
@@ -197,6 +201,10 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
             cmd += QString(NET_ACCESS_LOG_FILENAME);
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
+
+            cmd = "net bad: ";
+            cmd += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            emit signalDisplay(STAGE_DISPLAY_NOTES, cmd);
         }else
         {
             DEBUG_PRINTF("Already has been written LTE_DISCONNECTED.");

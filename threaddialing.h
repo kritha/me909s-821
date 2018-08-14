@@ -15,17 +15,16 @@
 #include <QObject>
 #include <QThread>
 #include <QNetworkInterface>
+#include <QDateTime>
+#include <QTimer>
 
 #include "global.h"
 
-using namespace std;
-
-
-class lteDialing : public QObject
+class threadDialing: public QThread
 {
     Q_OBJECT
 public:
-    lteDialing();
+    threadDialing();
     void showBuf(char* buf, int len);
     void showErrInfo(errInfo_t info);
     int setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed);
@@ -48,35 +47,20 @@ public:
     int checkInternetAccess();
     int getNativeNetworkInfo(QString ifName, QString &ipString);
     void showDialingResult(dialingResult_t& info);
-signals:
-    void signalDialingEnd(QByteArray array);
-    void signalDisplayDialingStage(char stage, QString result);
 public slots:
     int slotAlwaysRecvMsgForDebug(void);
-    int slotHuaWeiLTEmoduleDialingProcess(char resetFlag);
-private:
-    dialingResult_t dialingResult;
-};
-
-class threadDialing: public QObject
-{
-    Q_OBJECT
-    QThread workerThread;
-public:
-    threadDialing();
-    ~threadDialing();
-
-    lteDialing* getWorkerObject();
-public slots:
-    void handleResults(const QByteArray array);
-    void slotStartDialing(char reset);
-    void slotDisplayDialingStage(char stage, QString result);
+    int slotStartDialing(char resetFlag);
+    int slotMonitorTimerHandler(void);
 signals:
-    void signalStartDialing(char);
-    void signalDialingEnd(QByteArray array);
-    void signalDisplayDialingStage(char stage, QString result);
+    void signalDialingEnd(QString str);
+    void signalDisplay(char stage, QString result);
 private:
-    lteDialing* worker;
+    int fd, isDialing;
+    char nodePath[BOXV3_NODEPATH_LENGTH];
+    dialingResult_t dialingResult;
+protected:
+    void run(void);
+    QTimer monitorTimer;
 };
 
 #endif // THREADDIALING_H

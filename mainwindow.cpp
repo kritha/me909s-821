@@ -46,7 +46,7 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->lineEdit_netaccess->setText(NULL);
 }
 
-void MainWindow::slotDisplayDialingStage(char stage, QString result)
+void MainWindow::slotDisplay(char stage, QString result)
 {
     Qt::CheckState checkState;
     if(result.isEmpty())
@@ -112,6 +112,11 @@ void MainWindow::slotDisplayDialingStage(char stage, QString result)
     {
         ui->checkBox_netAccess->setCheckState(checkState);
         ui->lineEdit_netaccess->setText(result);
+        break;
+    }
+    case STAGE_DISPLAY_NOTES:
+    {
+        ui->textEdit_info->append(result);
         break;
     }
     default:

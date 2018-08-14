@@ -17,7 +17,7 @@ public:
     ~MainWindow();
 public slots:
     void slotDisplayInit(bool defFlag = false);
-    void slotDisplayDialingStage(char stage, QString result);
+    void slotDisplay(char stage, QString result);
 private:
     Ui::MainWindow *ui;
 };

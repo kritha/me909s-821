@@ -40,7 +40,9 @@ int main(int argc, char *argv[])
     QObject::connect(&dialing, &threadDialing::signalDialingEnd, &monitor, &threadLTENetMonitor::slotDialingEnd);
 
     //display
-    QObject::connect(&dialing, &threadDialing::signalDisplayDialingStage, &w, &MainWindow::slotDisplayDialingStage);
+    QObject::connect(&dialing, &threadDialing::signalDisplay, &w, &MainWindow::slotDisplay);
+    QObject::connect(&monitor, &threadLTENetMonitor::signalDisplay, &w, &MainWindow::slotDisplay);
+
 
     int ret = 0;
     int fd = -1;
@@ -51,19 +53,20 @@ int main(int argc, char *argv[])
 
     if(!cmdLine.isNull())
     {
-        dialing.getWorkerObject()->slotAlwaysRecvMsgForDebug();
+        dialing.slotAlwaysRecvMsgForDebug();
     }else
     {
         if(argc < 2)
         {
+            dialing.start();
             monitor.start();
             w.showFullScreen();
         }else
         {
-            ret = dialing.getWorkerObject()->initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
+            ret = dialing.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
             if(ret)
             {
-                dialing.getWorkerObject()->showErrInfo(errInfo);
+                dialing.showErrInfo(errInfo);
             }
             return 0;
         }
