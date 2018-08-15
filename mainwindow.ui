@@ -233,6 +233,42 @@
       <string>temperature</string>
      </property>
     </widget>
+    <widget class="QCheckBox" name="checkBox_iccid">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>300</y>
+       <width>92</width>
+       <height>23</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>ICCID</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_iccid">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>300</y>
+       <width>351</width>
+       <height>25</height>
+      </rect>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_timerCnt">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>340</y>
+       <width>351</width>
+       <height>25</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>timerCnt</string>
+     </property>
+    </widget>
    </widget>
    <widget class="QLineEdit" name="lineEdit_version">
     <property name="geometry">

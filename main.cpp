@@ -33,15 +33,15 @@ int main(int argc, char *argv[])
 
     MainWindow w;
     threadDialing dialing;
-    threadLTENetMonitor monitor;
+    //threadLTENetMonitor monitor;
 
-    QObject::connect(&monitor, &threadLTENetMonitor::signalStartDialing, &dialing, &threadDialing::slotStartDialing);
+    //QObject::connect(&monitor, &threadLTENetMonitor::signalStartDialing, &dialing, &threadDialing::slotStartDialing, Qt::QueuedConnection);
     /*this connect for prevent multiple access dialing process at the same time*/
-    QObject::connect(&dialing, &threadDialing::signalDialingEnd, &monitor, &threadLTENetMonitor::slotDialingEnd);
+    //QObject::connect(&dialing, &threadDialing::signalDialingEnd, &monitor, &threadLTENetMonitor::slotDialingEnd, Qt::QueuedConnection);
 
     //display
-    QObject::connect(&dialing, &threadDialing::signalDisplay, &w, &MainWindow::slotDisplay);
-    QObject::connect(&monitor, &threadLTENetMonitor::signalDisplay, &w, &MainWindow::slotDisplay);
+    QObject::connect(&dialing, &threadDialing::signalDisplay, &w, &MainWindow::slotDisplay, Qt::QueuedConnection);
+    //QObject::connect(&monitor, &threadLTENetMonitor::signalDisplay, &w, &MainWindow::slotDisplay, Qt::QueuedConnection);
 
 
     int ret = 0;
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
         if(argc < 2)
         {
             dialing.start();
-            monitor.start();
+            //monitor.start();
             w.showFullScreen();
         }else
         {

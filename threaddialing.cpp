@@ -6,9 +6,7 @@ threadDialing::threadDialing()
     fd = -1;
     isDialing = 0;
     bzero(nodePath, BOXV3_NODEPATH_LENGTH);
-    initDialingState(dialingResult);
 
-    QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler);
     moveToThread(this);
 }
 
@@ -548,6 +546,20 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* 
                 ret = -ENODATA;
             break;
         }
+        case PARSEACK_ICCID:
+        {
+            linep = getKeyLineFromBuf(buf, (char*)"^ICCID:");
+            if(linep)
+            {
+                strncpy(info.iccidAck, linep, sizeof(info.iccidAck));
+                emit signalDisplay(STAGE_ICCID, QString(info.iccidAck));
+            }else
+            {
+                bzero(info.iccidAck, sizeof(info.iccidAck));
+                ret = -ENODATA;
+            }
+            break;
+        }
         case PARSEACK_CPIN:
         {
             linep = getKeyLineFromBuf(buf, (char*)"READY");
@@ -819,11 +831,9 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* 
             if(linep)
             {
                 strncpy(info.csqAck, linep, sizeof(info.csqAck));
-                delim = cutAskFromKeyLine(linep, 0);
-                if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
-                {
-                    emit signalDisplay(STAGE_SIGNAL, QString(info.csqAck));
-                }
+                //delim = cutAskFromKeyLine(linep, 0);
+                //if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
+                emit signalDisplay(STAGE_SIGNAL, QString(info.csqAck));
             }else
             {
                 ret = -ENODATA;
@@ -974,7 +984,7 @@ int threadDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int 
     return ret;
 }
 
-int threadDialing::checkInternetAccess(void)
+int threadDialing::checkInternetAccess(char emergencyFlag)
 {
     int ret = 0;
     /* ping
@@ -991,7 +1001,15 @@ int threadDialing::checkInternetAccess(void)
      * -q              Quiet, only displays output at start
      *                  and when finished
     */
-    char cmdLine[64] = "ping -c 2 -s 1 -W 7 -w 10 -I ";
+
+    char cmdLine[64] = {};
+    if(emergencyFlag)
+    {
+        strcpy(cmdLine, "ping -c 1 -s 1 -W 1 -w 2 -I ");
+    }else
+    {
+        strcpy(cmdLine, "ping -c 2 -s 1 -W 7 -w 10 -I ");
+    }
     strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
     strncat(cmdLine, " ", 1);
     strncat(cmdLine, INTERNET_ACCESS_POINT, strlen(INTERNET_ACCESS_POINT));
@@ -1173,21 +1191,33 @@ int threadDialing::slotStartDialing(char resetFlag)
     QString ipString;
     QString notes;
 
+    mutexDial.lock();
     if(isDialing++ > 1)
     {
         ret = -EAGAIN;
-        return ret;
+        mutexDial.unlock();
+        DEBUG_PRINTF("isDialing... return!");
+        goto looperExit_with_TimerStart;
+    }else
+    {
+        mutexDial.unlock();
     }
 
-looper_check_stage_devicenode:
     //stop to monitor the normal net
     if(monitorTimer.isActive()) monitorTimer.stop();
 
+    DEBUG_PRINTF();
+looper_check_stage_devicenode:
+
+    DEBUG_PRINTF();
     notes = "Dialing start: ";
     //notes += QDateTime::currentDateTime().toString("yyyy/MM/dd-HH:mm:ss");
     notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
     emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
+
+    //init env
     initDialingState(dialingResult);
+
     //0. get nodePath and access permission
     ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
     if(ret)
@@ -1387,14 +1417,13 @@ looper_check_stage_devicenode:
 
 looper_dialing_exit:
     //get some other info: signalquality & temperature
+    sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", PARSEACK_ICCID, 2, 1);
     sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
     sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
 
-    exitSerialPortFromTtyLte(&fd);
-
     showDialingResult(dialingResult);
 
-    emit signalDialingEnd(ipString);
+    //emit signalDialingEnd(ipString);
 
     if(ipString.isEmpty())
     {
@@ -1407,10 +1436,13 @@ looper_dialing_exit:
     notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
     emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
 
+    mutexDial.lock();
     isDialing = 0;
+    mutexDial.unlock();
 
+looperExit_with_TimerStart:
     //start normal net monitor
-    monitorTimer.start(6000);
+    monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
 
     return ret;
 }
@@ -1418,23 +1450,50 @@ looper_dialing_exit:
 int threadDialing::slotMonitorTimerHandler()
 {
     int ret = 0;
+    static int prescaler = 0;
+    DEBUG_PRINTF();
+
     //dynamic check
-    DEBUG_PRINTF("{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}");
+    if(mutexDial.tryLock())
+    {
+        if(!isDialing)
+        {
+            dialingResult.timerCnt++;
+            emit signalDisplay(STAGE_DISPLAY_NSEC, QString::number(dialingResult.timerCnt));
 
-    //temperature
-    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
 
-    //SIM slot
-    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
+            if(prescaler > 10000) prescaler = 0;
+            if(prescaler++ / 3)
+                {
+                //ICCID
+                sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", PARSEACK_ICCID, 2, 1);
 
-    //net access
-    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2);
+                //CSQ
 
+                sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
+
+                //temperature
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
+
+                //SIM slot
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
+
+                //net access
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2);
+            }
+        }
+        mutexDial.unlock();
+        DEBUG_PRINTF("timerCnt: %ld", dialingResult.timerCnt);
+    }else
+    {
+        DEBUG_PRINTF("Warning: timer try lock failed.");
+    }
+
+    DEBUG_PRINTF("timerRet:%d", ret);
     if(ret)
     {
         monitorTimer.stop();
-        sleep(10);
-        slotStartDialing(0);
+        this->slotStartDialing(0);
     }
 
     return ret;
@@ -1442,8 +1501,8 @@ int threadDialing::slotMonitorTimerHandler()
 
 void threadDialing::run()
 {
-
-    QTimer monitorTimer;
+    QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler, Qt::QueuedConnection);
+    this->slotStartDialing(0);
 
     exec();
 }

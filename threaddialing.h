@@ -17,6 +17,7 @@
 #include <QNetworkInterface>
 #include <QDateTime>
 #include <QTimer>
+#include <QMutex>
 
 #include "global.h"
 
@@ -44,7 +45,7 @@ public:
     int tryBestToCleanSerialIO(int fd);
     char *getKeyLineFromBuf(char *buf, char *key);
     char *cutAskFromKeyLine(char* keyLine, int argIndex);
-    int checkInternetAccess();
+    int checkInternetAccess(char emergencyFlag = 0);
     int getNativeNetworkInfo(QString ifName, QString &ipString);
     void showDialingResult(dialingResult_t& info);
 public slots:
@@ -52,15 +53,17 @@ public slots:
     int slotStartDialing(char resetFlag);
     int slotMonitorTimerHandler(void);
 signals:
-    void signalDialingEnd(QString str);
+    //void signalDialingEnd(QString str);
     void signalDisplay(char stage, QString result);
 private:
-    int fd, isDialing;
+    int fd;
     char nodePath[BOXV3_NODEPATH_LENGTH];
     dialingResult_t dialingResult;
 protected:
     void run(void);
+    QMutex mutexDial;
     QTimer monitorTimer;
+    int isDialing;
 };
 
 #endif // THREADDIALING_H

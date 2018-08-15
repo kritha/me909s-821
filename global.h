@@ -5,7 +5,7 @@
 #include <strings.h>
 #include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.8.0.2"
+#define BOXV3CHECKAPP_VERSION "V0.8.0.6"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -29,6 +29,7 @@
 #define TIMESPEND_WHOLE_DIALING   30      //s
 
 #define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
+#define MONITOR_TIMER_CHECK_INTERVAL    (1000*1) //ms
 
 /*
  * Save __FILE__ ,__FUNCTION__, __LINE__, and err msg, when err occured.
@@ -58,6 +59,7 @@ enum parseEnum{
     PARSEACK_RESET,
     PARSEACK_AT,
     PARSEACK_ATI,
+    PARSEACK_ICCID,
     PARSEACK_CPIN,
     PARSEACK_REG,
     PARSEACK_SYSINFOEX,
@@ -77,6 +79,7 @@ enum checkStageLTE{
     STAGE_UNKNOWN,
     STAGE_NODE,
     STAGE_MODULE,
+    STAGE_ICCID,
     STAGE_SLOT,
     STAGE_SERVICE,
     STAGE_OPERATOR,
@@ -89,15 +92,17 @@ enum checkStageLTE{
     STAGE_DISPLAY_BOX,
     STAGE_DISPLAY_LINEEDIT,
     STAGE_DISPLAY_NOTES,
-    STAGE_DISPALY_NSEC,
+    STAGE_DISPLAY_NSEC,
 };
 
 typedef struct _dialingResult{
     char isDialedOk;
     enum checkStageLTE stage;
     char privateCh;
+    long timerCnt;
     char atAck[AT_ACK_RESULT_INFO_LENGTH];
     char atiAck[AT_ACK_RESULT_INFO_LENGTH];
+    char iccidAck[AT_ACK_RESULT_INFO_LENGTH];
     char cpinAck[AT_ACK_RESULT_INFO_LENGTH];
     char sysinfoexAck[AT_ACK_RESULT_INFO_LENGTH];
     char switchAck[AT_ACK_RESULT_INFO_LENGTH];

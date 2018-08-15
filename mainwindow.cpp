@@ -35,6 +35,7 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->checkBox_SIMDialing->setCheckState(checkState);
     ui->checkBox_SIMSignal->setCheckState(checkState);
     ui->checkBox_netAccess->setCheckState(checkState);
+    ui->checkBox_iccid->setCheckState(checkState);
 
     ui->lineEdit_deviceNode->setText(NULL);
     ui->lineEdit_LTEmodule->setText(NULL);
@@ -44,6 +45,7 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->lineEdit_dialing->setText(NULL);
     ui->lineEdit_signal->setText(NULL);
     ui->lineEdit_netaccess->setText(NULL);
+    ui->lineEdit_iccid->setText(NULL);
 }
 
 void MainWindow::slotDisplay(char stage, QString result)
@@ -70,6 +72,12 @@ void MainWindow::slotDisplay(char stage, QString result)
     {
         ui->checkBox_ltemodule->setCheckState(checkState);
         ui->lineEdit_LTEmodule->setText(result);
+        break;
+    }
+    case STAGE_ICCID:
+    {
+        ui->checkBox_iccid->setCheckState(checkState);
+        ui->lineEdit_iccid->setText(result);
         break;
     }
     case STAGE_SLOT:
@@ -117,6 +125,11 @@ void MainWindow::slotDisplay(char stage, QString result)
     case STAGE_DISPLAY_NOTES:
     {
         ui->textEdit_info->append(result);
+        break;
+    }
+    case STAGE_DISPLAY_NSEC:
+    {
+        ui->lineEdit_timerCnt->setText(result);
         break;
     }
     default:
