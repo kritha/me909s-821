@@ -2,6 +2,8 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QTimer>
+#include <QDateTime>
 #include "global.h"
 
 namespace Ui {
@@ -18,8 +20,10 @@ public:
 public slots:
     void slotDisplayInit(bool defFlag = false);
     void slotDisplay(char stage, QString result);
+    void slotWatchDogHandler(void);
 private:
     Ui::MainWindow *ui;
+    QTimer timerWatchDog;
 };
 
 #endif // MAINWINDOW_H

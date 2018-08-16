@@ -7,6 +7,8 @@ MainWindow::MainWindow(QWidget *parent) :
 {
     ui->setupUi(this);
 
+    QObject::connect(&timerWatchDog, &QTimer::timeout, this, &MainWindow::slotWatchDogHandler, Qt::QueuedConnection);
+    timerWatchDog.start(1000);
     ui->lineEdit_version->setText(QString((char*)BOXV3CHECKAPP_VERSION));
     slotDisplayInit(false);
 }
@@ -68,7 +70,7 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->lineEdit_deviceNode->setText(result);
         break;
     }
-    case STAGE_MODULE:
+    case STAGE_AT:
     {
         ui->checkBox_ltemodule->setCheckState(checkState);
         ui->lineEdit_LTEmodule->setText(result);
@@ -80,19 +82,19 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->lineEdit_iccid->setText(result);
         break;
     }
-    case STAGE_SLOT:
+    case STAGE_CPIN:
     {
         ui->checkBox_SIMSlot->setCheckState(checkState);
         ui->lineEdit_SIMslot->setText(result);
         break;
     }
-    case STAGE_SERVICE:
+    case STAGE_SYSINFOEX:
     {
         ui->checkBox_SIMDataService->setCheckState(checkState);
         ui->lineEdit_service->setText(result);
         break;
     }
-    case STAGE_OPERATOR:
+    case STAGE_COPS:
     {
         ui->checkBox_SIMOperator->setCheckState(checkState);
         ui->lineEdit_operator->setText(result);
@@ -104,13 +106,13 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->lineEdit_temp->setText(result);
         break;
     }
-    case STAGE_DIALE:
+    case STAGE_NDISDUP:
     {
         ui->checkBox_SIMDialing->setCheckState(checkState);
         ui->lineEdit_dialing->setText(result);
         break;
     }
-    case STAGE_SIGNAL:
+    case STAGE_NDISSTATQRY:
     {
         ui->checkBox_SIMSignal->setCheckState(checkState);
         ui->lineEdit_signal->setText(result);
@@ -120,6 +122,16 @@ void MainWindow::slotDisplay(char stage, QString result)
     {
         ui->checkBox_netAccess->setCheckState(checkState);
         ui->lineEdit_netaccess->setText(result);
+        break;
+    }
+    case STAGE_PING_RESULT:
+    {
+        ui->lineEdit_pingResult->setText(result);
+        break;
+    }
+    case STAGE_DISPLAY_INIT:
+    {
+        slotDisplayInit(false);
         break;
     }
     case STAGE_DISPLAY_NOTES:
@@ -138,4 +150,10 @@ void MainWindow::slotDisplay(char stage, QString result)
         break;
     }
     }
+}
+
+void MainWindow::slotWatchDogHandler()
+{
+    //ui->dateTimeEdit_sys->setDateTime(QDateTime::currentDateTime());
+    ui->lineEdit_sysTime->setText(QDateTime::currentDateTime().toString("yyyy/MM/dd[HH:mm:ss]"));
 }

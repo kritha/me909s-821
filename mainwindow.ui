@@ -260,13 +260,26 @@
      <property name="geometry">
       <rect>
        <x>260</x>
-       <y>340</y>
+       <y>360</y>
        <width>351</width>
        <height>25</height>
       </rect>
      </property>
      <property name="text">
       <string>timerCnt</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_pingResult">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>330</y>
+       <width>351</width>
+       <height>25</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>pingResult</string>
      </property>
     </widget>
    </widget>
@@ -293,7 +306,7 @@
      </rect>
     </property>
     <property name="title">
-     <string>info</string>
+     <string>Notes:</string>
     </property>
     <widget class="QTextEdit" name="textEdit_info">
      <property name="geometry">
@@ -305,6 +318,19 @@
       </rect>
      </property>
     </widget>
+   </widget>
+   <widget class="QLineEdit" name="lineEdit_sysTime">
+    <property name="geometry">
+     <rect>
+      <x>890</x>
+      <y>50</y>
+      <width>211</width>
+      <height>25</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>sysTime</string>
+    </property>
    </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">

@@ -52,6 +52,7 @@ public slots:
     int slotAlwaysRecvMsgForDebug(void);
     int slotStartDialing(char resetFlag);
     int slotMonitorTimerHandler(void);
+    int slotRunDialing(char beginStage = STAGE_DEFAULT);
 signals:
     //void signalDialingEnd(QString str);
     void signalDisplay(char stage, QString result);
