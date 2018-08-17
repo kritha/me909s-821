@@ -47,29 +47,22 @@ int main(int argc, char *argv[])
     int ret = 0;
     int fd = -1;
     char nodePath[128] = {};
-    QString cmdLine;
 
-    cmdLine = cmdLineParser(a);
+    cmdLineParser(a);
 
-    if(!cmdLine.isNull())
+    if(argc < 2)
     {
-        dialing.slotAlwaysRecvMsgForDebug();
+        dialing.start();
+        //monitor.start();
+        w.showFullScreen();
     }else
     {
-        if(argc < 2)
+        ret = dialing.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
+        if(ret)
         {
-            dialing.start();
-            //monitor.start();
-            w.showFullScreen();
-        }else
-        {
-            ret = dialing.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
-            if(ret)
-            {
-                dialing.showErrInfo(errInfo);
-            }
-            return 0;
+            dialing.showErrInfo(errInfo);
         }
+        return 0;
     }
 
     return a.exec();

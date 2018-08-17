@@ -4,6 +4,7 @@
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
+#include <QDateTime>
 
 #define BOXV3CHECKAPP_VERSION "V0.8.0.9"
 
@@ -30,6 +31,7 @@
 
 #define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
 #define MONITOR_TIMER_CHECK_INTERVAL    (1000*1) //ms
+#define MONITOR_TIMER_CHECK_SPECIAL_MULT    7
 
 /*
  * Save __FILE__ ,__FUNCTION__, __LINE__, and err msg, when err occured.
@@ -53,28 +55,6 @@ typedef struct _errInfo{
     char errMsgBuf[BOXV3_ERRMSGBUF_LEN];
 }errInfo_t;
 
-enum parseEnum{
-    NOTPARSEACK,
-    PARSEACK_OK,
-    PARSEACK_RESET,
-    PARSEACK_AT,
-    PARSEACK_ATI,
-    PARSEACK_ICCID,
-    PARSEACK_CPIN,
-    PARSEACK_REG,
-    PARSEACK_SYSINFOEX,
-    PARSEACK_COPS,
-    PARSEACK_SWITCH_CHANNEL,
-    PARSEACK_COPS_CH_M,
-    PARSEACK_COPS_CH_U,
-    PARSEACK_COPS_CH_T,
-    PARSEACK_NDISSTATQRY,
-    PARSEACK_CSQ,
-    PARSEACK_TEMP,
-    SPECIAL_PARSE_IP_INFO,
-    SPECIAL_PARSE_PING_RESULT,
-};
-
 enum checkStageLTE{
     STAGE_UNKNOWN,
     STAGE_WAIT_SHORT,
@@ -88,49 +68,71 @@ enum checkStageLTE{
     STAGE_CPIN,
     STAGE_SYSINFOEX,
     STAGE_COPS,
+    STAGE_CSQ,
+    STAGE_CHIPTEMP,
     STAGE_NDISDUP,
     STAGE_NDISSTATQRY,
-    STAGE_PING_RESULT,
+    STAGE_CHECK_IP,
+    STAGE_CHECK_PING,
+
+    STAGE_RESULT_SUCCESS,
+    STAGE_RESULT_FAILED,
+    STAGE_RESULT_UNKNOWN,
+
     STAGE_REFRESH_BASE_INFO,
 
-    STAGE_TEMP,
-    STAGE_NET,
-    STAGEEND_SUCCESS,
-    STAGEEND_FAILED,
+    STAGE_PARSE_SIMPLE,
+    STAGE_PARSE_OFF,
+
+    STAGE_OPERATOR_MOBILE,
+    STAGE_OPERATOR_TELECOM,
+    STAGE_OPERATOR_UNICOM,
+
+    STAGE_SLOT_0,
+    STAGE_SLOT_1,
+    STAGE_SLOT_2_bck,
+    STAGE_SLOT_3_bck,
+    STAGE_SLOT_4_bck,
+
+
     STAGE_DISPLAY_INIT,
     STAGE_DISPLAY_BOX,
     STAGE_DISPLAY_LINEEDIT,
     STAGE_DISPLAY_NOTES,
     STAGE_DISPLAY_NSEC,
 };
+typedef struct _dialingBaseMsg{
+    char checkCnt;
+    enum checkStageLTE result;
+    char meAckMsg[AT_ACK_RESULT_INFO_LENGTH];
+}dialingBaseMsg_t;
 
-typedef struct _dialingResult{
-    char isDialedOk;
-    enum checkStageLTE stage;
-    char privateCh;
-    long timerCnt;
-    char atAck[AT_ACK_RESULT_INFO_LENGTH];
-    char atiAck[AT_ACK_RESULT_INFO_LENGTH];
-    char iccidAck[AT_ACK_RESULT_INFO_LENGTH];
-    char cpinAck[AT_ACK_RESULT_INFO_LENGTH];
-    char sysinfoexAck[AT_ACK_RESULT_INFO_LENGTH];
-    char switchAck[AT_ACK_RESULT_INFO_LENGTH];
-    char cregAck[AT_ACK_RESULT_INFO_LENGTH];
-    char copsAck[AT_ACK_RESULT_INFO_LENGTH];
-    char qryAck[AT_ACK_RESULT_INFO_LENGTH];
-    char csqAck[AT_ACK_RESULT_INFO_LENGTH];
-    char tempAck[AT_ACK_RESULT_INFO_LENGTH];
-    char ipinfo[AT_ACK_RESULT_INFO_LENGTH];
-    char pingAck[AT_ACK_RESULT_INFO_LENGTH];
-}dialingResult_t;
+typedef struct _dialingInfo{
+    bool isDialSuccess;
+    enum checkStageLTE currentOperator;
+    enum checkStageLTE currentSlot;
+    enum checkStageLTE currentStage;
+    int dialingCnt;
+    QDateTime startTime;
+    QDateTime endTime;
 
-enum connectTimeStatus{
-    LTE_START_DIALING,
-    LTE_END_DIALING,
-    LTE_CONNECTED,
-    LTE_DISCONNECTED,
-    LTE_CONNECTED_UPTIME,
-};
+    dialingBaseMsg_t reset;
+    dialingBaseMsg_t at;
+    dialingBaseMsg_t swit;
+    dialingBaseMsg_t cpin;
+    dialingBaseMsg_t sysinfoex;
+    dialingBaseMsg_t cops;
+    dialingBaseMsg_t ndisdup;
+    dialingBaseMsg_t qry;
+
+    dialingBaseMsg_t csq;
+    dialingBaseMsg_t iccid;
+    dialingBaseMsg_t chiptemp;
+
+    dialingBaseMsg_t ip;
+    dialingBaseMsg_t ping;
+}dialingInfo_t;
+
 extern errInfo_t errInfo;
 
 #endif // GLOBAL_H

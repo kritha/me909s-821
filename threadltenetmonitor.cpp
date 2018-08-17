@@ -156,15 +156,15 @@ int threadLTENetMonitor::createLogFile(QString dirFullPath)
     return ret;
 }
 
-int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
+int threadLTENetMonitor::writeLogLTE(checkStageLTE c)
 {
     int ret = 0;
     QString cmd;
-    static enum connectTimeStatus lastTimeStatus;
+    static enum checkStageLTE lastTimeStatus;
 
     switch(c)
     {
-    case LTE_CONNECTED:
+    case STAGE_RESULT_SUCCESS:
     {
         if(LTE_CONNECTED != lastTimeStatus)
         {
@@ -189,7 +189,7 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
         }
         break;
     }
-    case LTE_DISCONNECTED:
+    case STAGE_RESULT_FAILED:
     {
         if(LTE_DISCONNECTED != lastTimeStatus)
         {
@@ -210,10 +210,6 @@ int threadLTENetMonitor::writeLogLTE(connectTimeStatus c)
             DEBUG_PRINTF("Already has been written LTE_DISCONNECTED.");
             break;
         }
-    }
-    case LTE_CONNECTED_UPTIME:
-    {
-        break;
     }
     default:
     {

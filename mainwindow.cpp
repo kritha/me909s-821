@@ -100,7 +100,7 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->lineEdit_operator->setText(result);
         break;
     }
-    case STAGE_TEMP:
+    case STAGE_CHIPTEMP:
     {
         ui->checkBox_temp->setCheckState(checkState);
         ui->lineEdit_temp->setText(result);
@@ -124,7 +124,7 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->lineEdit_netaccess->setText(result);
         break;
     }
-    case STAGE_PING_RESULT:
+    case STAGE_CHECK_PING:
     {
         ui->lineEdit_pingResult->setText(result);
         break;

@@ -7,7 +7,7 @@ threadDialing::threadDialing()
     isDialing = 0;
     bzero(nodePath, BOXV3_NODEPATH_LENGTH);
 
-    initDialingState(dialingResult);
+    initDialingState(dialingInfo);
 
     moveToThread(this);
 }
@@ -302,84 +302,6 @@ int threadDialing::sendCMDofAT(int fd, char *cmd, int len)
     return ret;
 }
 
-int threadDialing::recvMsgFromATModuleAndParsed(int fd, parseEnum key, int nsec)
-{
-    int ret=0, i=0;
-    char ch = 0;
-    char buf[BUF_TMP_LENGTH] = {};
-    int bufIndex = 0;
-    fd_set readfds;
-    struct timeval tm;
-
-    if(nsec < 1) nsec = 1;
-
-    DEBUG_PRINTF("####################################");
-    for(i=0; i<=10; i++)
-    {
-        DEBUG_PRINTF("###rdCnt:%d\n", i);
-        //wait a while for hw before read
-        usleep(500);
-        //use select timeval to monitor read-timeout and read-end
-        FD_ZERO(&readfds);
-        FD_SET(fd, &readfds);
-        tm.tv_sec = nsec;
-        tm.tv_usec = 0;
-        ret = select(fd+1, &readfds, NULL, NULL, &tm);
-        if(ret < 0)
-        {
-            ERR_RECORDER(strerror(errno));
-        }else if(0 == ret)
-        {
-            if(NOTPARSEACK == key)
-            {
-                ret = 0;
-            }else
-            {
-                ret = -ETIMEDOUT;
-            }
-            break;
-        }else
-        {
-            ret = 0;
-            bzero(buf, BUF_TMP_LENGTH);
-            bufIndex = 0;
-            if(FD_ISSET(fd, &readfds))
-            {
-                while(1 == read(fd, &ch, 1))
-                {
-                    if (bufIndex >= (BUF_TMP_LENGTH - 1))
-                    {
-                        break;
-                    }else
-                    {
-                        sprintf(&buf[bufIndex++], "%c", ch);
-                    }
-                }
-                showBuf(buf, BUF_TMP_LENGTH);
-                //analyse read date if have key and if we wanna parse it
-                if(NOTPARSEACK != key)
-                {
-                    ret = parseATcmdACKbyLineOrSpecialCmd(dialingResult, buf, BUF_TMP_LENGTH, key);
-                    DEBUG_PRINTF("parse(key:%d, ret:%d).", key, ret);
-                    if(!ret)
-                        break;
-                    else
-                        ret = -ENODATA;
-                }else
-                {
-                    DEBUG_PRINTF("key is NOTPARSEACK.");
-                }
-            }else
-            {
-                ret = -EINVAL;
-                ERR_RECORDER("select wrong, no data to read.");
-            }
-        }
-    }
-
-    return ret;
-}
-
 
 int threadDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char* nodePath, char* devNodePath, char* cmd)
 {
@@ -398,32 +320,11 @@ int threadDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char*
             ret = sendCMDofAT(*fdp, cmd, strlen(cmd));
             if(!ret)
             {
-                ret = recvMsgFromATModuleAndParsed(*fdp, NOTPARSEACK, 1);
+                ret = recvMsgFromATModuleAndParsed(*fdp, STAGE_PARSE_OFF, 1);
                 DEBUG_PRINTF("ret:%d\n", ret);
             }
         }
         close(*fdp);
-    }
-
-    return ret;
-}
-
-int threadDialing::parseConfigFile(char* nodePath, int bufLen, char *key)
-{
-    int ret = 0;
-    if(!nodePath) return -EINVAL;
-
-    if((signed)strlen(key) > bufLen) return -EINVAL;
-
-    bzero(nodePath, bufLen);
-    if(strstr(key, "NODENAME"))
-    {
-        strcpy(nodePath, BOXV3_NODEPATH_LTE);
-    }
-    else
-    {
-        ret = -ENOMEM;
-        ERR_RECORDER(NULL);
     }
 
     return ret;
@@ -462,18 +363,26 @@ char* threadDialing::getKeyLineFromBuf(char* buf, char* key)
  * @param argIndex : 0 - n
  * @return string pointer of the argIndex if it's found, and NULL when failed
  */
-char *threadDialing::cutAskFromKeyLine(char *keyLine, int argIndex)
+char *threadDialing::cutAskFromKeyLine(char *keyLine, int keyLineLen, const char* srcLine, int argIndex)
 {
     char* token = NULL;
 
     if(argIndex < 0) argIndex = 0;
 
-    if(!keyLine)
+    if(!keyLine || !srcLine)
     {
         DEBUG_PRINTF("NULL argument.");
         ERR_RECORDER(NULL);
     }else
     {
+        bzero(keyLine, keyLineLen);
+        if(strlen(srcLine) > keyLineLen)
+        {
+            strncpy(keyLine, srcLine, keyLineLen);
+        }else
+        {
+            strncpy(keyLine, srcLine, strlen(srcLine));
+        }
         //get the delim string after ":"
         strtok(keyLine, ":");
         token = strtok(NULL, ":");
@@ -488,445 +397,6 @@ char *threadDialing::cutAskFromKeyLine(char *keyLine, int argIndex)
     return token;
 }
 
-void threadDialing::initDialingState(dialingResult_t &info)
-{
-    bzero(&info, sizeof(dialingResult_t));
-}
-
-int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingResult_t& info, char* buf, int len, parseEnum e)
-{
-    int ret = 0;
-    char* linep = NULL;
-    char* delim = NULL;
-
-    if(!buf || (len <= 0))
-    {
-        ERR_RECORDER(NULL);
-        DEBUG_PRINTF();
-        ret = -EINVAL;
-    }
-    else
-    {
-        if((SPECIAL_PARSE_IP_INFO != e) && (SPECIAL_PARSE_PING_RESULT != e))
-        {
-        //buf, must end with a '\0'
-            buf[len - 1] = '\0';
-        }
-
-        switch(e)
-        {
-        case PARSEACK_OK:
-        {
-            if(!strstr(buf, "OK"))
-                ret = -ENODATA;
-            break;
-        }
-        case PARSEACK_RESET:
-        {
-            if(!strstr(buf, "OK"))
-                ret = -ENODATA;
-            break;
-        }
-        case PARSEACK_AT:
-        {
-
-            linep = getKeyLineFromBuf(buf, (char*)"OK");
-            if(linep)
-            {
-                strncpy(info.atAck, linep, sizeof(info.atAck));
-                emit signalDisplay(STAGE_AT, QString(info.atAck));
-            }else
-            {
-                bzero(info.atAck, sizeof(info.atAck));
-                ret = -ENODATA;
-            }
-
-            break;
-        }
-        case PARSEACK_ATI:
-        {
-            if(!strstr(buf, "OK"))
-                ret = -ENODATA;
-            break;
-        }
-        case PARSEACK_ICCID:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"^ICCID:");
-            if(linep)
-            {
-                strncpy(info.iccidAck, linep, sizeof(info.iccidAck));
-                emit signalDisplay(STAGE_ICCID, QString(info.iccidAck));
-            }else
-            {
-                bzero(info.iccidAck, sizeof(info.iccidAck));
-                ret = -ENODATA;
-            }
-            break;
-        }
-        case PARSEACK_CPIN:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"READY");
-            if(linep)
-            {
-                strncpy(info.cpinAck, linep, sizeof(info.cpinAck));
-                emit signalDisplay(STAGE_CPIN, QString(info.cpinAck));
-            }else
-            {
-                bzero(info.cpinAck, sizeof(info.cpinAck));
-                ret = -ENODATA;
-            }
-            break;
-        }
-#if 0
-        /*ChinaT: +REG:0, 2   but is works well. So drop it*/
-        case PARSEACK_REG:
-        {
-            /* 1(或5) 表示数据业务可以使用；
-             * 2 、3 、4 表示数据业务不可用。
-             *
-             * +CREG: <stat>[,<lac>,<ci>[,<AcT>]].
-
-             * <n>:
-                0  Disable network registration unsolicited result code +CREG. (default value)
-                1  Enable network registration unsolicited result code +CREG: <stat>.
-                2  Enable network registration and location information unsolicited result code
-
-             * <stat>:
-                0  Not registered, MS is not currently searching for a new operator to register
-                with.
-                1  Registered, home network.
-                2  Not registered, but MS is currently searching for a new operator to register
-                with.
-                3  Registration denied.
-                4  Unknown.
-                5  Registered, roaming.
-             */
-            linep = getKeyLineFromBuf(buf, (char*)"+CREG:");
-            if(linep)
-            {
-                strncpy(info.cregAck, linep, sizeof(info.cregAck));
-                if((!strstr(linep, "1")) && (!strstr(linep, "5")))
-                {
-                    ret = -ENODATA;
-                    //debug
-                    if(!strstr(linep, "2"))
-                    {
-                        DEBUG_PRINTF("---debug---reg: 0,2");
-                        ret = 0;
-                    }
-                    //debug end
-                }
-            }else
-            {
-                bzero(info.cregAck, sizeof(info.cregAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-#endif
-        case PARSEACK_SYSINFOEX:
-        {
-            /*
-             * <srv_status>：表示系统服务状态。
-                        0  无服务
-                        1  服务受限
-                        2  服务有效
-                        3  区域服务受限
-                        4  省电或休眠状态
-             * <srv_domain>：表示系统服务域。
-                    0  无服务
-                    1  仅 CS 服务
-                    2  仅 PS 服务
-                    3  PS+CS 服务
-                    4  CS、PS 均未注册，并处于搜索状态
-                    255  CDMA（暂不支持）
-            */
-            linep = getKeyLineFromBuf(buf, (char*)"^SYSINFOEX:");
-            if(linep)
-            {
-                strncpy(info.sysinfoexAck, linep, sizeof(info.sysinfoexAck));
-                emit signalDisplay(STAGE_SYSINFOEX, QString(info.sysinfoexAck));
-#if 0
-                //check the service status
-                delim = cutAskFromKeyLine(linep, 0);
-                switch(atoi(delim))
-                {
-                case 0:
-                case 1:
-                case 3:
-                case 4:
-                {
-                    ret = -ENOPROTOOPT;
-                    ERR_RECORDER(NULL);
-                    DEBUG_PRINTF("Error: SIM no service");
-                    break;
-                }
-                case 2:
-                {
-                    ret = 0;
-                    DEBUG_PRINTF("Success: SIM in avaliable service status.");
-                    break;
-                }
-                default:
-                {
-                    ret = -ENODATA;
-                    ERR_RECORDER(NULL);
-                    DEBUG_PRINTF("Error: SIM unknown service status.");
-                    break;
-                }
-                }
-#endif
-                //check the service domain
-                delim = cutAskFromKeyLine(linep, 1);
-                switch(atoi(delim))
-                {
-                case 0:
-                {
-                    ret = -ENOPROTOOPT;
-                    ERR_RECORDER(NULL);
-                    DEBUG_PRINTF("Error: SIM no service");
-                    break;
-                }
-                default:
-                {
-                    ret = 0;
-                    DEBUG_PRINTF("Success: SIM in avaliable service domain.");
-                    break;
-                }
-                }
-            }else
-            {
-                bzero(info.sysinfoexAck, sizeof(info.sysinfoexAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case PARSEACK_COPS:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
-            if(linep)
-            {
-                strncpy(info.copsAck, linep, sizeof(info.copsAck));
-                emit signalDisplay(STAGE_COPS, QString(info.copsAck));
-
-                if(strstr(linep, "CMCC") || strstr(linep, "CHINA MOBILE"))
-                {//CMNET
-                    info.privateCh = PARSEACK_COPS_CH_M;
-                    //emit signalDisplay(STAGE_OPERATOR, QString("CMNET"));
-                }else if(strstr(linep, "CHN-CT"))
-                {//CTNET
-                    info.privateCh = PARSEACK_COPS_CH_T;
-                    //emit signalDisplay(STAGE_OPERATOR, QString("CTNET"));
-                }else if(strstr(linep, "CHN-UNICOM"))
-                {//3GNET
-                    info.privateCh = PARSEACK_COPS_CH_U;
-                    //emit signalDisplay(STAGE_OPERATOR, QString("3GNET"));
-                }else
-                {
-                    info.privateCh = 0;
-                    ret = -ENODATA;
-                    ERR_RECORDER(NULL);
-                    DEBUG_PRINTF("");
-                }
-            }else
-            {
-                bzero(info.copsAck, sizeof(info.copsAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-                DEBUG_PRINTF("no +COPS:");
-            }
-            break;
-        }
-        case PARSEACK_SWITCH_CHANNEL:
-        {
-            /*'ret' which is very special at here, which is the num of channel, or -errno with errno*/
-            linep = getKeyLineFromBuf(buf, (char*)"^SIMSWITCH:");
-            if(linep)
-            {
-                strncpy(info.switchAck, linep, sizeof(info.switchAck));
-                char* chp = getKeyLineFromBuf(linep, (char*)"1");
-                if(chp)
-                {//channel 1
-                    info.privateCh = 1;
-                }else
-                {//channel 0
-                    info.privateCh = 0;
-                }
-            }else
-            {
-                bzero(info.switchAck, sizeof(info.switchAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-#if 0
-        case PARSEACK_COPS_CH_M:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
-            if(linep)
-            {
-                strncpy(info.copsAck, linep, sizeof(info.copsAck));
-                if((!strstr(linep, "CMCC")) && (!strstr(linep, "CHINA MOBILE")))
-                {
-                    ret = -ENODATA;
-                    ERR_RECORDER(NULL);
-                }else
-                {
-                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString(info.copsAck));
-                }
-            }else
-            {
-                bzero(info.copsAck, sizeof(info.copsAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case PARSEACK_COPS_CH_T:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
-            if(linep)
-            {
-                strncpy(info.copsAck, linep, sizeof(info.copsAck));
-                if(!strstr(linep, "CHN-CT"))
-                {
-                    ret = -ENODATA;
-                    ERR_RECORDER(NULL);
-                }else
-                {
-                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString(info.copsAck));
-                }
-            }else
-            {
-                bzero(info.copsAck, sizeof(info.copsAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case PARSEACK_COPS_CH_U:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
-            if(linep)
-            {
-                strncpy(info.copsAck, linep, sizeof(info.copsAck));
-                if(!strstr(linep, "CHN-UNICOM"))
-                {
-                    ret = -ENODATA;
-                }else
-                {
-                    emit signalDisplayDialingStage(STAGE_OPERATOR, QString(info.copsAck));
-                }
-            }else
-            {
-                bzero(info.copsAck, sizeof(info.copsAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-#endif
-        case PARSEACK_CSQ:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"+CSQ:");
-            if(linep)
-            {
-                strncpy(info.csqAck, linep, sizeof(info.csqAck));
-                //delim = cutAskFromKeyLine(linep, 0);
-                //if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
-                emit signalDisplay(STAGE_NDISSTATQRY, QString(info.csqAck));
-            }else
-            {
-                ret = -ENODATA;
-                bzero(info.csqAck, sizeof(info.csqAck));
-            }
-
-            break;
-        }
-        case PARSEACK_TEMP:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"^CHIPTEMP:");
-            if(linep)
-            {
-                strncpy(info.tempAck, linep, sizeof(info.tempAck));
-                emit signalDisplay(STAGE_TEMP, QString(info.tempAck));
-                //delim = cutAskFromKeyLine(linep, 5);
-                //if(atoi(delim) < SIM_TEMP_VALUE_MAX);
-            }else
-            {
-                ret = -ENODATA;
-                bzero(info.tempAck, sizeof(info.tempAck));
-            }
-            break;
-        }
-        case PARSEACK_NDISSTATQRY:
-        {
-            linep = getKeyLineFromBuf(buf, (char*)"^NDISSTATQRY:");
-            if(linep)
-            {
-                strncpy(info.qryAck, linep, sizeof(info.qryAck));
-                if(!strstr(linep, "1,,,\"IPV4\""))
-                {
-                    ret = -ENODATA;
-                }else
-                {
-                    emit signalDisplay(STAGE_NDISDUP, QString(info.qryAck));
-                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
-                    showBuf(linep, BUF_TMP_LENGTH);
-                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
-                }
-            }else
-            {
-                bzero(info.qryAck, sizeof(info.qryAck));
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-
-            break;
-        }
-        case SPECIAL_PARSE_IP_INFO:
-        {
-            if(len > 0)
-            {
-                strncpy(info.ipinfo, buf, len);
-            }else
-            {
-                bzero(info.ipinfo, sizeof(info.ipinfo));
-                ret = -ENODATA;
-            }
-            emit signalDisplay(STAGE_NET, QString(info.ipinfo));
-            break;
-        }
-        case SPECIAL_PARSE_PING_RESULT:
-        {
-            if(1 == len)
-            {
-                strcpy(info.pingAck, "OK");
-                info.isDialedOk = 1;
-            }else
-            {
-                ret = -ENODATA;
-                info.isDialedOk = 0;
-                strcpy(info.pingAck, "Not good.");
-            }
-            emit signalDisplay(STAGE_PING_RESULT, QString(info.pingAck));
-            break;
-        }
-        default:
-        {
-            ret = -ENODATA;
-            ERR_RECORDER(NULL);
-            break;
-        }
-        }
-    }
-
-    return ret;
-}
-
 int threadDialing::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
 {
     int ret = 0;
@@ -935,6 +405,28 @@ int threadDialing::tryAccessDeviceNode(int* fdp, char* nodePath, int nodeLen)
     {
         ret = initSerialPortForTtyLte(fdp, nodePath, BOXV3_BAUDRATE_UART, 1, 3);
     }
+    return ret;
+}
+
+
+int threadDialing::parseConfigFile(char* nodePath, int bufLen, char *key)
+{
+    int ret = 0;
+    if(!nodePath) return -EINVAL;
+
+    if((signed)strlen(key) > bufLen) return -EINVAL;
+
+    bzero(nodePath, bufLen);
+    if(strstr(key, "NODENAME"))
+    {
+        strcpy(nodePath, BOXV3_NODEPATH_LTE);
+    }
+    else
+    {
+        ret = -ENOMEM;
+        ERR_RECORDER(NULL);
+    }
+
     return ret;
 }
 
@@ -968,7 +460,7 @@ int threadDialing::tryBestToCleanSerialIO(int fd)
  * retryCnt: how many times do you wanna do again when this func exec failed.
  * RDndelay: how long would you wait each time when recv every signal msg from MT
 */
-int threadDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int retryCnt, int RDndelay)
+int threadDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, checkStageLTE key, int retryCnt, int RDndelay)
 {
     int ret = 0, i=0;
 
@@ -984,6 +476,399 @@ int threadDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, parseEnum key, int 
         }else
             ERR_RECORDER(NULL);
     }
+    return ret;
+}
+
+int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* buf, const int len, checkStageLTE e)
+{
+    int ret = 0;
+    char* linep = NULL;
+    char* delim = NULL;
+    char* linepTmp = NULL;
+
+    mutexInfo.lock();
+
+    linepTmp = malloc(len);
+
+    if(!buf || (len <= 0))
+    {
+        ERR_RECORDER(NULL);
+        DEBUG_PRINTF();
+        ret = -EINVAL;
+    }
+    else
+    {
+        if((STAGE_CHECK_IP != e) && (STAGE_CHECK_PING != e))
+        {
+        //buf, must end with a '\0'
+            buf[len-1] = '\0';
+        }
+
+        switch(e)
+        {
+        case STAGE_PARSE_SIMPLE:
+        {
+            if(!strstr(buf, "OK"))
+                ret = -ENODATA;
+            break;
+        }
+        case STAGE_RESET:
+        {
+            info.reset.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"OK");
+            if(linep)
+            {
+                info.reset.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.reset.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+            }else
+            {
+                info.reset.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.reset.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case STAGE_AT:
+        {
+            info.at.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"OK");
+            if(linep)
+            {
+                info.at.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.at.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+            }else
+            {
+                info.at.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.at.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case STAGE_ICCID:
+        {
+            info.iccid.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"^ICCID:");
+            if(linep)
+            {
+                info.iccid.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.iccid.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+            }else
+            {
+                info.iccid.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.iccid.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case STAGE_CPIN:
+        {
+            info.cpin.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"READY");
+            if(linep)
+            {
+                info.cpin.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.cpin.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+            }else
+            {
+                info.cpin.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.cpin.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case STAGE_SYSINFOEX:
+        {
+            /*
+             * <srv_status>：表示系统服务状态。
+                    0  无服务, 1  服务受限, 2  服务有效, 3  区域服务受限, 4  省电或休眠状态
+             * <srv_domain>：表示系统服务域。
+                    0  无服务, 1  仅 CS 服务, 2  仅 PS 服务, 3  PS+CS 服务, 4  CS、PS 均未注册，并处于搜索状态, 255  CDMA（暂不支持）
+            */
+            info.sysinfoex.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"^SYSINFOEX:");
+            if(linep)
+            {
+                strncpy(info.sysinfoex.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                //check the service domain
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
+                switch(atoi(delim))
+                {
+                case 0:
+                {
+                    info.sysinfoex.result = STAGE_RESULT_FAILED;
+                    ret = -ENOPROTOOPT;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("Error: SIM no service");
+                    break;
+                }
+                default:
+                {
+                    info.sysinfoex.result = STAGE_RESULT_SUCCESS;
+                    ret = 0;
+                    DEBUG_PRINTF("Success: SIM in avaliable service domain.");
+                    break;
+                }
+                }
+            }else
+            {
+                info.sysinfoex.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.sysinfoex.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+            }
+            break;
+        }
+        case STAGE_COPS:
+        {
+            info.cops.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
+            if(linep)
+            {
+                info.cops.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.cops.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+
+                if(strstr(linep, "CMCC") || strstr(linep, "CHINA MOBILE"))
+                {
+                    info.currentOperator = STAGE_OPERATOR_MOBILE;
+                }else if(strstr(linep, "CHN-CT"))
+                {
+                    info.currentOperator = STAGE_OPERATOR_TELECOM;
+                }else if(strstr(linep, "CHN-UNICOM"))
+                {
+                    info.currentOperator = STAGE_OPERATOR_UNICOM;
+                }else
+                {
+                    info.cops.result = STAGE_RESULT_FAILED;
+                    info.currentOperator = STAGE_UNKNOWN;
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("");
+                }
+            }else
+            {
+                info.cops.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.cops.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+                DEBUG_PRINTF("no +COPS:");
+            }
+            break;
+        }
+        case STAGE_SIMSWITCH:
+        {
+            info.swit.checkCnt++;
+            /*'ret' which is very special at here, which is the num of channel, or -errno with errno*/
+            linep = getKeyLineFromBuf(buf, (char*)"^SIMSWITCH:");
+            if(linep)
+            {
+                info.swit.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.swit.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                char* chp = getKeyLineFromBuf(linep, (char*)"1");
+                if(chp)
+                {//channel 1
+                    info.currentSlot = STAGE_SLOT_1;
+                }else
+                {//channel 0
+                    info.currentSlot = STAGE_SLOT_0;
+                }
+            }else
+            {
+                info.swit.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.swit.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+            }
+            break;
+        }
+        case STAGE_CSQ:
+        {
+            info.csq.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"+CSQ:");
+            if(linep)
+            {
+                info.csq.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.csq.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                //delim = cutAskFromKeyLine(linep, 0);
+                //if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
+            }else
+            {
+                info.csq.result = STAGE_RESULT_UNKNOWN;
+                ret = -ENODATA;
+                bzero(info.csq.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+            }
+            break;
+        }
+        case STAGE_CHIPTEMP:
+        {
+            info.chiptemp.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"^CHIPTEMP:");
+            if(linep)
+            {
+                info.chiptemp.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.chiptemp.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                //delim = cutAskFromKeyLine(linep, 5);
+                //if(atoi(delim) < SIM_TEMP_VALUE_MAX);
+            }else
+            {
+                info.chiptemp.result = STAGE_RESULT_UNKNOWN;
+                ret = -ENODATA;
+                bzero(info.chiptemp.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+            }
+            break;
+        }
+        case STAGE_NDISSTATQRY:
+        {
+            info.qry.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"^NDISSTATQRY:");
+            if(linep)
+            {
+                strncpy(info.qry.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                if(!strstr(linep, "1,,,\"IPV4\""))
+                {
+                    info.qry.result = STAGE_RESULT_FAILED;
+                    ret = -ENODATA;
+                }else
+                {
+                    info.qry.result = STAGE_RESULT_SUCCESS;
+                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
+                    showBuf(linep, BUF_TMP_LENGTH);
+                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
+                }
+            }else
+            {
+                info.qry.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.qry.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+            }
+
+            break;
+        }
+        case STAGE_CHECK_IP:
+        {
+            info.ip.checkCnt++;
+            if(len > 0)
+            {
+                info.ip.result = STAGE_RESULT_SUCCESS;
+                strncpy(info.ip.meAckMsg, buf, AT_ACK_RESULT_INFO_LENGTH);
+            }else
+            {
+                info.ip.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.ip.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+            }
+            break;
+        }
+        case STAGE_CHECK_PING:
+        {
+            info.ping.checkCnt++;
+            if(1 == len)
+            {
+                info.ping.result = STAGE_RESULT_SUCCESS;
+                strcpy(info.ping.meAckMsg, "OK");
+                info.isDialSuccess = STAGE_RESULT_SUCCESS;
+            }else
+            {
+                info.ping.result = STAGE_RESULT_FAILED;
+                ret = -ENODATA;
+                info.isDialSuccess = STAGE_RESULT_FAILED;
+                strcpy(info.ping.meAckMsg, "Bad.");
+            }
+            break;
+        }
+        default:
+        {
+            ret = -ENODATA;
+            ERR_RECORDER(NULL);
+            break;
+        }
+        }
+        //display
+        emit signalDisplay(e, QString(linep));
+
+    }
+
+    free(linepTmp);
+    mutexInfo.unlock();
+
+    return ret;
+}
+
+int threadDialing::recvMsgFromATModuleAndParsed(int fd, checkStageLTE key, int nsec)
+{
+    int ret=0, i=0;
+    char ch = 0;
+    char buf[BUF_TMP_LENGTH] = {};
+    int bufIndex = 0;
+    fd_set readfds;
+    struct timeval tm;
+
+    if(nsec < 1) nsec = 1;
+
+    DEBUG_PRINTF("####################################");
+    for(i=0; i<=10; i++)
+    {
+        DEBUG_PRINTF("###rdCnt:%d\n", i);
+        //wait a while for hw before read
+        usleep(500);
+        //use select timeval to monitor read-timeout and read-end
+        FD_ZERO(&readfds);
+        FD_SET(fd, &readfds);
+        tm.tv_sec = nsec;
+        tm.tv_usec = 0;
+        ret = select(fd+1, &readfds, NULL, NULL, &tm);
+        if(ret < 0)
+        {
+            ERR_RECORDER(strerror(errno));
+        }else if(0 == ret)
+        {
+            if(STAGE_PARSE_OFF == key)
+            {
+                ret = 0;
+            }else
+            {
+                ret = -ETIMEDOUT;
+            }
+            break;
+        }else
+        {
+            ret = 0;
+            bzero(buf, BUF_TMP_LENGTH);
+            bufIndex = 0;
+            if(FD_ISSET(fd, &readfds))
+            {
+                while(1 == read(fd, &ch, 1))
+                {
+                    if (bufIndex >= (BUF_TMP_LENGTH - 1))
+                    {
+                        break;
+                    }else
+                    {
+                        sprintf(&buf[bufIndex++], "%c", ch);
+                    }
+                }
+                showBuf(buf, BUF_TMP_LENGTH);
+                //analyse read date if have key and if we wanna parse it
+                if(STAGE_PARSE_OFF != key)
+                {
+                    ret = parseATcmdACKbyLineOrSpecialCmd(dialingResult, buf, BUF_TMP_LENGTH, key);
+                    DEBUG_PRINTF("parse(key:%d, ret:%d).", key, ret);
+                    if(!ret)
+                        break;
+                    else
+                        ret = -ENODATA;
+                }else
+                {
+                    DEBUG_PRINTF("key is NOTPARSEACK.");
+                }
+            }else
+            {
+                ret = -EINVAL;
+                ERR_RECORDER("select wrong, no data to read.");
+            }
+        }
+    }
+
     return ret;
 }
 
@@ -1023,7 +908,7 @@ int threadDialing::checkInternetAccess(char emergencyFlag)
         ERR_RECORDER("ping failed.");
     }else
     {
-        parseATcmdACKbyLineOrSpecialCmd(dialingResult, (char*)"!ret", 1, SPECIAL_PARSE_PING_RESULT);
+        parseATcmdACKbyLineOrSpecialCmd(dialingInfo, (char*)"!ret", 1, STAGE_CHECK_PING);
     }
 
     DEBUG_PRINTF("ping ret: %d", ret);
@@ -1088,452 +973,68 @@ int threadDialing::getNativeNetworkInfo(QString ifName, QString& ipString)
     return ret;
 }
 
-void threadDialing::showDialingResult(dialingResult_t &info)
+void threadDialing::showDialingResult(dialingInfo_t &info)
 {
     DEBUG_PRINTF("#######################show begin#######################");
     printf("ret:%d\n", info.isDialedOk);
     printf("stage:%d\n", info.stage);
     printf("AT:");
-    showBuf(info.atAck, sizeof(info.atAck));
-    printf("ATI");
-    showBuf(info.atiAck, sizeof(info.atiAck));
+    showBuf(info.at.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("CPIN:");
-    showBuf(info.cpinAck, sizeof(info.cpinAck));
+    showBuf(info.cpin.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("SYSINFOEX:");
-    showBuf(info.sysinfoexAck, sizeof(info.sysinfoexAck));
-    printf("SWITCH:");
-    showBuf(info.switchAck, sizeof(info.switchAck));
-    printf("CREG:");
-    showBuf(info.cregAck, sizeof(info.cregAck));
+    showBuf(info.sysinfoex.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+    printf("SIMSWITCH:");
+    showBuf(info.swit.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("COPS:");
-    showBuf(info.copsAck, sizeof(info.copsAck));
+    showBuf(info.cops.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("NDISSTATQRY:");
-    showBuf(info.qryAck, sizeof(info.qryAck));
+    showBuf(info.qry.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("CSQ:");
-    showBuf(info.csqAck, sizeof(info.csqAck));
+    showBuf(info.csq.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("TEMP:");
-    showBuf(info.tempAck, sizeof(info.tempAck));
+    showBuf(info.temp.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("IP:");
-    showBuf(info.ipinfo, sizeof(info.ipinfo));
+    showBuf(info.ip.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     printf("PING:");
-    showBuf(info.pingAck, sizeof(info.pingAck));
+    showBuf(info.ping.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
     DEBUG_PRINTF("#######################show end#######################");
 }
 
 
-int threadDialing::slotAlwaysRecvMsgForDebug()
-{
-    int ret = 0, fd = -1;
-    char ch = 0;
-    char buf[BUF_TMP_LENGTH] = {};
-    int bufIndex = 0;
-    fd_set readfds;
-
-    //0. get nodePath and access permission*fdp = open(nodePath, O_RDONLY);
-    fd = open(BOXV3_NODEPATH_LTE, O_RDONLY);
-    if(fd < 0)
-    {
-        ret = -EAGAIN;
-        ERR_RECORDER("Unable to open device");
-    }else
-    {
-        ret = setSerialPortNodeProperty(fd, 8, 1, 'N', BOXV3_BAUDRATE_UART);
-        /*some sets are wrong*/
-        if(0 != ret)
-        {
-            ret = -EAGAIN;
-            exitSerialPortFromTtyLte(&fd);
-        }else
-        {
-            /*success*/
-            while(1)
-            {
-                //use select timeval to monitor read-timeout and read-end
-                FD_ZERO(&readfds);
-                FD_SET(fd, &readfds);
-                ret = select(fd+1, &readfds, NULL, NULL, NULL);
-                if(ret < 0)
-                {
-                    ERR_RECORDER(strerror(errno));
-                }else if(0 == ret)
-                {
-                    printf("...\n");
-                    sleep(1);
-                }else
-                {
-                    bzero(buf, BUF_TMP_LENGTH);
-                    bufIndex = 0;
-                    if(FD_ISSET(fd, &readfds))
-                    {
-                        while(1 == read(fd, &ch, 1))
-                        {
-                            if (bufIndex >= (BUF_TMP_LENGTH - 1))
-                            {
-                                break;
-                            }else
-                            {
-                                sprintf(&buf[bufIndex++], "%c", ch);
-                            }
-                        }
-                        showBuf(buf, BUF_TMP_LENGTH);
-                    }
-                }
-            }
-        }
-    }
-
-    close(fd);
-    return ret;
-}
-
-
-int threadDialing::slotStartDialing(char resetFlag)
-{
-    char probeCntFlag = 0, currentChannel = 0;
-    int ret = 0;
-    QString ipString;
-    QString notes;
-
-
-    //stop to monitor the normal net
-    if(monitorTimer.isActive()) monitorTimer.stop();
-
-    mutexDial.lock();
-    if(isDialing != 0)
-    {
-        ret = -EAGAIN;
-        mutexDial.unlock();
-        DEBUG_PRINTF("someont isDialing... return!");
-        return ret;
-    }else
-    {
-        isDialing = 1;
-        mutexDial.unlock();
-    }
-
-
-    DEBUG_PRINTF();
-looper_check_stage_devicenode:
-    notes = "Dialing start: ";
-    //notes += QDateTime::currentDateTime().toString("yyyy/MM/dd-HH:mm:ss");
-    notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
-    emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
-
-    //init env
-    emit signalDisplay(STAGE_DISPLAY_INIT, NULL);
-    initDialingState(dialingResult);
-
-    //0. get nodePath and access permission
-    ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
-    if(ret)
-    {
-        ret = -ENODEV;
-        emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
-        printf("Error: Can't access MT device node.");
-    }else
-    {
-        emit signalDisplay(STAGE_NODE, QString(nodePath));
-        DEBUG_PRINTF("Success: access MT device node.");
-
-
-        //check for the internet access before dialing
-        ret = checkInternetAccess(1);
-        if(!ret)
-        {
-            DEBUG_PRINTF("Net access is ok formerly.");
-            emit signalDisplay(STAGE_DISPLAY_NOTES, QString("Net access is ok formerly."));
-            goto looper_dialing_exit;
-        }
-
-        //1. check available for module
-//looper_check_stage_ltemodule:
-        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT", PARSEACK_AT, 2, 2);
-        if(ret)
-        {
-            ret = -EIO;
-            printf("Error: MT doesn't work.");
-        }else
-        {
-            DEBUG_PRINTF("Success: MT is working.");
-
-            //close display the cmd back
-            //sendCMDandCheckRecvMsg(fd, (char*)"ATE0", PARSEACK_AT, 2, 1);
-            /*
-             * RESET the MT by user in force
-            */
-            if(resetFlag)
-            {
-               ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
-               DEBUG_PRINTF("wait reset for more than 10s...");
-               sleep(10);
-               //call back or kill itself and restart by sysinit:respawn service
-               DEBUG_PRINTF("reset done. Start check MT again.");
-               goto looper_check_stage_devicenode;
-            }
-
-            //2. check slot & access for SIM
-///looper_check_stage_switchslot:
-            if(4 > probeCntFlag)
-            {
-                if(!(probeCntFlag++/2))
-                {
-                    DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                    currentChannel = dialingResult.privateCh;
-                    DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
-                    switch(currentChannel)
-                    {
-                    case 0:
-                    {
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                        sleep(4);
-                        break;
-                    }
-                    case 1:
-                    {
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                        sleep(4);
-                        break;
-                    }
-                    default:
-                    {
-                        DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
-                        sleep(4);
-                        break;
-                    }
-                    }
-                }else
-                {
-                    DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
-                    /*
-                    * switch doesn't work that have to reset the MT
-                    * if MT hasn't been reset
-                    */
-
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
-                    DEBUG_PRINTF("wait reset for more than 10s...");
-                    sleep(10);
-                    //call back or kill itself and restart by sysinit:respawn service
-                    DEBUG_PRINTF("reset done. Start check MT again.");
-                    goto looper_check_stage_devicenode;
-                }
-            }
-//looper_check_stage_simslot:
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
-            if(!ret)
-            {
-                DEBUG_PRINTF("Success: found a SIM card");
-            }else
-            {
-                ret = -EAGAIN;
-                DEBUG_PRINTF("Warning: \"AT+CPIN?\" failed!");
-            }
-        }
-    }
-
-    if(ret)
-    {
-        printf("Error: no SIM card.\n");
-        goto looper_dialing_exit;
-    }else
-    {
-        //3. check data service for SIM
-//looper_check_stage_dataservice:
-
-        //ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CREG?", PARSEACK_REG, 1, 2);
-        ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SYSINFOEX", PARSEACK_SYSINFOEX, 2, 1);
-        if(ret)
-        {
-            DEBUG_PRINTF("Error: the SIM card has no data service.");
-            ret = -ENODATA;
-        }else
-        {
-            DEBUG_PRINTF("Success: the SIM card has data service.");
-
-            ret = 0;
-            //4 get network operator
-//looper_check_stage_dialingoperator:
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS, 2, 2);
-            DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
-            switch(dialingResult.privateCh)
-            {
-            case PARSEACK_COPS_CH_M:
-            {
-                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
-                {
-                    DEBUG_PRINTF("CMCC dialing end.");
-                }else
-                {
-                    DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
-                }
-                break;
-            }
-            case PARSEACK_COPS_CH_T:
-            {
-                //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
-                //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);
-                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", PARSEACK_OK, 2, 2))
-                {
-                    DEBUG_PRINTF("CH-T dialing end.");
-                }else
-                {
-                    DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
-                }
-                break;
-            }
-            case PARSEACK_COPS_CH_U:
-            {
-                if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
-                {
-                    DEBUG_PRINTF("CH-U dialing end.");
-                }else
-                {
-                    DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
-                }
-                break;
-            }
-            default:
-            {
-                DEBUG_PRINTF("Didn't dialing at all.");
-                ERR_RECORDER(NULL);
-                break;
-            }
-            }
-
-//looper_check_stage_getip:
-            //6.1 check the dialing result
-            if(!(ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2)))
-            {
-                char cmdLine[64] = "udhcpc -t 10 -T 1 -A 1 -n -q -i ";
-                strncat(cmdLine, LTE_MODULE_NETNODENAME, strlen(LTE_MODULE_NETNODENAME));
-                ret = system(cmdLine);
-            }else
-            {
-                DEBUG_PRINTF("Warning: \"AT^NDISSTATQRY?\" failed! Dialing failed.");
-                goto looper_dialing_exit;
-            }
-        }
-    }
-
-
-    DEBUG_PRINTF();
-    //7.1 check for the internet access
-//looper_check_stage_dialingresult:
-    if(0 == ret)
-    {
-        ret = checkInternetAccess();
-    }
-
-looper_dialing_exit:
-    if(fd > 0)
-    {
-        //get some other info: signalquality & temperature
-        sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", PARSEACK_ICCID, 2, 1);
-        sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
-        sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
-    }
-
-    showDialingResult(dialingResult);
-
-    //emit signalDialingEnd(ipString);
-    //7.0 parse if has a ip
-    if(1)
-    {
-        getNativeNetworkInfo(QString((char*)LTE_MODULE_NETNODENAME), ipString);
-        parseATcmdACKbyLineOrSpecialCmd(dialingResult, ipString.toLocal8Bit().data(), ipString.length(), SPECIAL_PARSE_IP_INFO);
-    }
-    if(ipString.isEmpty())
-    {
-        notes = "end failed: ";
-    }else
-    {
-        notes = "end success: ";
-    }
-    //notes += QDateTime::currentDateTime().toString("yyyy/MM/dd-HH:mm:ss");
-    notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
-    emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
-
-    mutexDial.lock();
-    isDialing = 0;
-    mutexDial.unlock();
-
-    //start normal net monitor
-    monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
-
-    return ret;
-}
-
 int threadDialing::slotMonitorTimerHandler()
 {
-    QString ipString;
-    int ret = 0;
     static int prescaler = 0;
+    int ret = 0;
+    bool isSuccess;
     DEBUG_PRINTF();
 
     //dynamic check
-    if(mutexDial.tryLock())
+    if(mutexMoniHandler.tryLock())
     {
-        if(!isDialing)
-        {
-            dialingResult.timerCnt++;
-            emit signalDisplay(STAGE_DISPLAY_NSEC, QString::number(dialingResult.timerCnt));
-
-
-            if(prescaler > 10000) prescaler = 0;
-            if(prescaler++ / 10)
-                {
-
-                //if has a ip
-                if(1)
-                {
-                    getNativeNetworkInfo(QString((char*)LTE_MODULE_NETNODENAME), ipString);
-                    parseATcmdACKbyLineOrSpecialCmd(dialingResult, ipString.toLocal8Bit().data(), ipString.length(), SPECIAL_PARSE_IP_INFO);
-                }
-                //check for the internet access
-                checkInternetAccess(1);
-
-                if(fd > 0)
-                {
-                    //COPS
-                    sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS, 2, 1);
-                    //ICCID
-                    sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", PARSEACK_ICCID, 2, 1);
-
-                    //CSQ
-
-                    sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", PARSEACK_CSQ, 2, 1);
-
-                    //temperature
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", PARSEACK_TEMP, 2, 1);
-
-                    //SIM slot
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
-
-                    //net access
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2);
-                }
-            }
-            DEBUG_PRINTF("timerCnt: %ld", dialingResult.timerCnt);
-        }else
-        {
-            DEBUG_PRINTF("isDialing... return");
-        }
-
-        mutexDial.unlock();
-
-        DEBUG_PRINTF("timerRet:%d", ret);
-        if(ret || (fd<0))
+        if(prescaler > 10000) prescaler = 0;
+        DEBUG_PRINTF("preascaler: %d.", prescaler);
+        if(prescaler++/MONITOR_TIMER_CHECK_SPECIAL_MULT)
         {
             monitorTimer.stop();
-            this->slotStartDialing(0);
+
+            mutexInfo.lock();
+            isSuccess = dialingInfo.isDialSuccess;
+            mutexInfo.unlock();
+
+            if(isSuccess)
+            {
+                slotRunDialing(STAGE_REFRESH_BASE_INFO);
+            }else
+            {
+                slotRunDialing(STAGE_DEFAULT);
+            }
+            monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
         }
-
-
+        mutexDial.unlock();
     }else
     {
-        DEBUG_PRINTF("Warning: timer try lock failed at this time.");
+        DEBUG_PRINTF("Warning: timer handler is running formerly.");
     }
 
     return ret;
@@ -1543,9 +1044,6 @@ int threadDialing::slotRunDialing(char beginStage)
 {
     int ret = 0, switchCnt = 0, resetCnt = 0;
     QString notes;
-
-    //0.0 stop to monitor the normal net
-    if(monitorTimer.isActive()) monitorTimer.stop();
 
     //just one slot be triggered at one time
     if(mutexDial.tryLock())
@@ -1560,14 +1058,14 @@ int threadDialing::slotRunDialing(char beginStage)
             {
                 if(1 > resetCnt++)
                 {
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", PARSEACK_RESET, 2, 2);
+                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", STAGE_RESET, 2, 2);
                     DEBUG_PRINTF("wait reset for more than 10s...");
                     sleep(10);
                     //call back or kill itself and restart by sysinit:respawn service
                     DEBUG_PRINTF("reset done. Start check MT again.");
                 }else
                 {
-                    beginStage = STAGEEND_FAILED;
+                    beginStage = STAGE_RESULT_FAILED;
                     continue;
                 }
             }
@@ -1582,7 +1080,7 @@ int threadDialing::slotRunDialing(char beginStage)
                     {
                         DEBUG_PRINTF("Net access is ok formerly.");
                         emit signalDisplay(STAGE_DISPLAY_NOTES, QString("Net access is ok formerly."));
-                        beginStage = STAGEEND_SUCCESS;
+                        beginStage = STAGE_RESULT_SUCCESS;
                         continue;
                     }
                 }
@@ -1590,8 +1088,8 @@ int threadDialing::slotRunDialing(char beginStage)
             case STAGE_INITENV:
             {
                 //init env
+                initDialingState(dialingInfo);
                 emit signalDisplay(STAGE_DISPLAY_INIT, QString());
-                initDialingState(dialingResult);
 
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
                 {
@@ -1610,7 +1108,7 @@ int threadDialing::slotRunDialing(char beginStage)
                     if(ret)
                     {
                         emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
-                        beginStage = STAGEEND_FAILED;
+                        beginStage = STAGE_RESULT_FAILED;
                         continue;
                     }else
                     {
@@ -1623,13 +1121,13 @@ int threadDialing::slotRunDialing(char beginStage)
             }
             case STAGE_AT:
             {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT", PARSEACK_AT, 2, 2);
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT", STAGE_AT, 2, 2);
 
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
                 {
                     if(ret)
                     {
-                        beginStage = STAGEEND_FAILED;
+                        beginStage = STAGE_RESULT_FAILED;
                         continue;
                     }else
                     {
@@ -1642,30 +1140,30 @@ int threadDialing::slotRunDialing(char beginStage)
             {
                 if(3 > switchCnt++)
                 {
-                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                    ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 2);
 
                     if(STAGE_REFRESH_BASE_INFO != beginStage)
                     {
                         DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-                        DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
-                        switch(dialingResult.privateCh)
+                        DEBUG_PRINTF("currentSlot:%d.", dialingInfo.currentSlot);
+                        switch(dialingInfo.currentSlot)
                         {
-                        case 0:
+                        case STAGE_SLOT_0:
                         {
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", STAGE_SIMSWITCH, 2, 2);
                             sleep(4);
                             break;
                         }
-                        case 1:
+                        case STAGE_SLOT_1:
                         {
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", STAGE_SIMSWITCH, 2, 2);
                             sleep(4);
                             break;
                         }
                         default:
                         {
                             DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
-                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", PARSEACK_SWITCH_CHANNEL, 2, 2);
+                            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", STAGE_SIMSWITCH, 2, 2);
                             sleep(4);
                             break;
                         }
@@ -1684,7 +1182,7 @@ int threadDialing::slotRunDialing(char beginStage)
             }
             case STAGE_CPIN:
             {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", PARSEACK_CPIN, 2, 2);
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", STAGE_CPIN, 2, 2);
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
                 {
                     if(ret)
@@ -1696,29 +1194,29 @@ int threadDialing::slotRunDialing(char beginStage)
             }
             case STAGE_SYSINFOEX:
             {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SYSINFOEX", PARSEACK_SYSINFOEX, 2, 1);
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SYSINFOEX", STAGE_SYSINFOEX, 2, 1);
 
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
                 {
                     if(ret)
                     {
-                        beginStage = STAGEEND_FAILED;
+                        beginStage = STAGE_RESULT_FAILED;
                         continue;
                     }
                 }
             }
             case STAGE_COPS:
             {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", PARSEACK_COPS, 2, 2);
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", STAGE_COPS, 2, 2);
 
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
                 {
-                    DEBUG_PRINTF("dialingResult.privateCh:%d.", dialingResult.privateCh);
-                    switch(dialingResult.privateCh)
+                    DEBUG_PRINTF("currentOperator:%d.", dialingInfo.currentOperator);
+                    switch(dialingInfo.currentOperator)
                     {
-                    case PARSEACK_COPS_CH_M:
+                    case STAGE_OPERATOR_MOBILE:
                     {
-                        if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", PARSEACK_OK, 2, 2))
+                        if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", STAGE_PARSE_SIMPLE, 2, 2))
                         {
                             DEBUG_PRINTF("CMCC dialing end.");
                         }else
@@ -1727,11 +1225,11 @@ int threadDialing::slotRunDialing(char beginStage)
                         }
                         break;
                     }
-                    case PARSEACK_COPS_CH_T:
+                    case STAGE_OPERATOR_TELECOM:
                     {
                         //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
                         //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);
-                        if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", PARSEACK_OK, 2, 2))
+                        if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", STAGE_PARSE_SIMPLE, 2, 2))
                         {
                             DEBUG_PRINTF("CH-T dialing end.");
                         }else
@@ -1740,9 +1238,9 @@ int threadDialing::slotRunDialing(char beginStage)
                         }
                         break;
                     }
-                    case PARSEACK_COPS_CH_U:
+                    case STAGE_OPERATOR_UNICOM:
                     {
-                        if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", PARSEACK_OK, 2, 2))
+                        if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", STAGE_PARSE_SIMPLE, 2, 2))
                         {
                             DEBUG_PRINTF("CH-U dialing end.");
                         }else
@@ -1762,18 +1260,18 @@ int threadDialing::slotRunDialing(char beginStage)
             }
             case STAGE_NDISSTATQRY:
             {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", PARSEACK_NDISSTATQRY, 2, 2);
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", STAGE_NDISSTATQRY, 2, 2);
 
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
                 {
                     if(ret)
                     {
-                        beginStage = STAGEEND_FAILED;
+                        beginStage = STAGE_RESULT_FAILED;
                         continue;
                     }
                 }
             }
-            case STAGE_PING_RESULT:
+            case STAGE_CHECK_PING:
             {
 
                 if(STAGE_REFRESH_BASE_INFO != beginStage)
@@ -1781,11 +1279,11 @@ int threadDialing::slotRunDialing(char beginStage)
                     ret = checkInternetAccess(0);
                 }
             }
-            case STAGEEND_SUCCESS:
+            case STAGE_RESULT_SUCCESS:
             {
                 break;
             }
-            case STAGEEND_FAILED:
+            case STAGE_RESULT_FAILED:
             default:
             {
                 break;
@@ -1802,10 +1300,12 @@ int threadDialing::slotRunDialing(char beginStage)
         DEBUG_PRINTF("Warning: break! It isRunning formerly...");
     }
 
-    //0.1
-    if(!monitorTimer.isActive()) monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
-
     return ret;
+}
+
+void threadDialing::initDialingState(dialingInfo_t &info)
+{
+    bzero(&info, sizeof(dialingInfo_t));
 }
 
 void threadDialing::run()

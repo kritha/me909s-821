@@ -27,7 +27,7 @@ protected:
     void run(void);
 private:
     int createLogFile(QString dirFullPath);
-    int writeLogLTE(connectTimeStatus c);
+    int writeLogLTE(checkStageLTE c);
 };
 
 #endif // THREADLTENETMONITOR_H
