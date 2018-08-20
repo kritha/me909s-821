@@ -38,6 +38,7 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->checkBox_SIMDialing->setCheckState(checkState);
     ui->checkBox_SIMSignal->setCheckState(checkState);
     ui->checkBox_netAccess->setCheckState(checkState);
+    ui->checkBox_pingResult->setCheckState(checkState);
     ui->checkBox_temp->setCheckState(checkState);
     ui->checkBox_iccid->setCheckState(checkState);
     ui->checkBox_currentMode->setCheckState(checkState);
@@ -50,10 +51,13 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->lineEdit_operator->setText(NULL);
     ui->lineEdit_dialing->setText(NULL);
     ui->lineEdit_netaccess->setText(NULL);
+    ui->lineEdit_pingResult->setText(NULL);
     ui->lineEdit_signal->setText(NULL);
     ui->lineEdit_temp->setText(NULL);
     ui->lineEdit_iccid->setText(NULL);
     ui->lineEdit_currentMode->setText(NULL);
+    ui->lineEdit_successCnt->setText(QString("0"));
+    ui->lineEdit_failedCnt->setText(QString("0"));
 }
 
 void MainWindow::slotDisplay(char stage, QString result)
@@ -69,9 +73,20 @@ void MainWindow::slotDisplay(char stage, QString result)
 
     switch(stage)
     {
+    case STAGE_RESET:
+    {
+        DEBUG_PRINTF();
+        //slotDisplayInit(false);
+        break;
+    }
+    case STAGE_DEFAULT:
+    {
+        ui->checkBox_currentMode->setCheckState(checkState);
+        ui->lineEdit_currentMode->setText(result);
+        break;
+    }
     case STAGE_NODE:
     {
-        slotDisplayInit(false);
         ui->checkBox_deviceNode->setCheckState(checkState);
         ui->lineEdit_deviceNode->setText(result);
         break;
@@ -137,9 +152,16 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->lineEdit_netaccess->setText(result);
         break;
     }
+    case STAGE_CHECK_PING:
+    {
+        ui->checkBox_pingResult->setCheckState(checkState);
+        ui->lineEdit_pingResult->setText(result);
+        break;
+    }
     case STAGE_DISPLAY_INIT:
     {
-        slotDisplayInit(false);
+        DEBUG_PRINTF();
+        //slotDisplayInit(false);
         break;
     }
     case STAGE_DISPLAY_NOTES:
@@ -147,10 +169,14 @@ void MainWindow::slotDisplay(char stage, QString result)
         ui->textEdit_info->append(result);
         break;
     }
-    case STAGE_DEFAULT:
+    case STAGE_DISPLAY_CNT_SUCCESS:
     {
-        ui->checkBox_currentMode->setCheckState(checkState);
-        ui->lineEdit_currentMode->setText(result);
+        ui->lineEdit_successCnt->setText(result);
+        break;
+    }
+    case STAGE_DISPLAY_CNT_FAILED:
+    {
+        ui->lineEdit_failedCnt->setText(result);
         break;
     }
     default:

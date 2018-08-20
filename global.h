@@ -5,7 +5,7 @@
 #include <strings.h>
 #include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.8.6"
+#define BOXV3CHECKAPP_VERSION "V0.8.7"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -101,6 +101,8 @@ enum checkStageLTE{
     STAGE_DISPLAY_BOX,
     STAGE_DISPLAY_LINEEDIT,
     STAGE_DISPLAY_NOTES,
+    STAGE_DISPLAY_CNT_SUCCESS,
+    STAGE_DISPLAY_CNT_FAILED,
 };
 typedef struct _dialingBaseMsg{
     char checkCnt;

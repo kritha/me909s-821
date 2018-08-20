@@ -765,7 +765,6 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         case STAGE_CHECK_PING:
         {
             info.ping.checkCnt++;
-            linep = buf;
 
             if(STAGE_RESULT_SUCCESS == len)
             {
@@ -777,6 +776,8 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
                 ret = -ENODATA;
                 strcpy(info.ping.meAckMsg, "Bad.");
             }
+            linep = info.ping.meAckMsg;
+
             break;
         }
         default:
@@ -1351,10 +1352,7 @@ looper_stage_branch:
         }
         case STAGE_CHECK_PING:
         {
-            if(STAGE_MODE_REFRESH != currentStage)
-            {
-                ret = checkInternetAccess(1);
-            }
+            ret = checkInternetAccess(1);
         }
         case STAGE_CHECK_IP:
         {
@@ -1382,6 +1380,8 @@ looper_stage_branch:
             successCnt++;
             mutexInfo.unlock();
 
+            emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(successCnt));
+
             notes = QString::number(successCnt);
             if(STAGE_MODE_REFRESH != currentMode)
             {
@@ -1400,6 +1400,7 @@ looper_stage_branch:
             dialingInfo.isDialedSuccess = STAGE_RESULT_FAILED;
             failedCnt++;
             mutexInfo.unlock();
+            emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(failedCnt));
 
             notes = QString::number(failedCnt);
             if(STAGE_MODE_REFRESH != currentMode)

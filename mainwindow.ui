@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1131</width>
-    <height>600</height>
+    <width>1217</width>
+    <height>739</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,8 +19,8 @@
      <rect>
       <x>60</x>
       <y>80</y>
-      <width>691</width>
-      <height>391</height>
+      <width>631</width>
+      <height>471</height>
      </rect>
     </property>
     <property name="title">
@@ -260,7 +260,7 @@
      <property name="geometry">
       <rect>
        <x>260</x>
-       <y>360</y>
+       <y>390</y>
        <width>351</width>
        <height>25</height>
       </rect>
@@ -273,7 +273,7 @@
      <property name="geometry">
       <rect>
        <x>0</x>
-       <y>350</y>
+       <y>390</y>
        <width>141</width>
        <height>23</height>
       </rect>
@@ -305,13 +305,36 @@
       </rect>
      </property>
     </widget>
+    <widget class="QCheckBox" name="checkBox_pingResult">
+     <property name="geometry">
+      <rect>
+       <x>0</x>
+       <y>360</y>
+       <width>92</width>
+       <height>23</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>pingResult</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_pingResult">
+     <property name="geometry">
+      <rect>
+       <x>260</x>
+       <y>360</y>
+       <width>351</width>
+       <height>25</height>
+      </rect>
+     </property>
+    </widget>
    </widget>
    <widget class="QLineEdit" name="lineEdit_version">
     <property name="geometry">
      <rect>
-      <x>990</x>
+      <x>760</x>
       <y>20</y>
-      <width>113</width>
+      <width>211</width>
       <height>25</height>
      </rect>
     </property>
@@ -323,9 +346,9 @@
     <property name="geometry">
      <rect>
       <x>760</x>
-      <y>80</y>
-      <width>391</width>
-      <height>391</height>
+      <y>160</y>
+      <width>441</width>
+      <height>401</height>
      </rect>
     </property>
     <property name="title">
@@ -336,8 +359,8 @@
       <rect>
        <x>0</x>
        <y>20</y>
-       <width>361</width>
-       <height>351</height>
+       <width>421</width>
+       <height>361</height>
       </rect>
      </property>
     </widget>
@@ -345,8 +368,8 @@
    <widget class="QLineEdit" name="lineEdit_sysTime">
     <property name="geometry">
      <rect>
-      <x>890</x>
-      <y>50</y>
+      <x>760</x>
+      <y>70</y>
       <width>211</width>
       <height>25</height>
      </rect>
@@ -355,13 +378,78 @@
      <string>sysTime</string>
     </property>
    </widget>
+   <widget class="QGroupBox" name="groupBox_3">
+    <property name="geometry">
+     <rect>
+      <x>980</x>
+      <y>20</y>
+      <width>201</width>
+      <height>80</height>
+     </rect>
+    </property>
+    <property name="title">
+     <string>Counter:</string>
+    </property>
+    <widget class="QLineEdit" name="lineEdit_successCnt">
+     <property name="geometry">
+      <rect>
+       <x>70</x>
+       <y>20</y>
+       <width>113</width>
+       <height>25</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>successCnt</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_noteSuccess">
+     <property name="geometry">
+      <rect>
+       <x>20</x>
+       <y>20</y>
+       <width>41</width>
+       <height>25</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>OK:</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_noteFailed">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>50</y>
+       <width>61</width>
+       <height>25</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Failed:</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEdit_failedCnt">
+     <property name="geometry">
+      <rect>
+       <x>70</x>
+       <y>50</y>
+       <width>113</width>
+       <height>25</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>failedCnt</string>
+     </property>
+    </widget>
+   </widget>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1131</width>
+     <width>1217</width>
      <height>22</height>
     </rect>
    </property>
