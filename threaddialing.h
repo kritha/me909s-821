@@ -18,6 +18,7 @@
 #include <QDateTime>
 #include <QTimer>
 #include <QMutex>
+#include <QCoreApplication>
 
 #include "global.h"
 
@@ -47,18 +48,19 @@ public:
 
     char *getKeyLineFromBuf(char *buf, char *key);
     char *cutAskFromKeyLine(char* keyLine, int keyLineLen, const char *srcLine, int argIndex);
+    int checkIP(char emergencyFlag);
     int checkInternetAccess(char emergencyFlag = 0);
     int getNativeNetworkInfo(QString ifName, QString &ipString);
     void showDialingResult(dialingInfo_t& info);
 public slots:
     int slotMonitorTimerHandler(void);
-    int slotRunDialing(char beginStage = STAGE_DEFAULT);
+    int slotRunDialing(checkStageLTE currentStage = STAGE_DEFAULT);
 signals:
     void signalDisplay(char stage, QString result);
 protected:
     QTimer monitorTimer;
     QMutex mutexDial;
-    QMutex mutexMoniHandler;
+    //QMutex mutexMoniHandler;
 
     int fd;
     char nodePath[BOXV3_NODEPATH_LENGTH];

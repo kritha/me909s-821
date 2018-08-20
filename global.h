@@ -4,9 +4,8 @@
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
-#include <QDateTime>
 
-#define BOXV3CHECKAPP_VERSION "V0.8.0.9"
+#define BOXV3CHECKAPP_VERSION "V0.8.6"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -58,6 +57,10 @@ typedef struct _errInfo{
 enum checkStageLTE{
     STAGE_UNKNOWN,
     STAGE_WAIT_SHORT,
+
+    STAGE_MODE_DIAL,
+    STAGE_MODE_REFRESH,
+
     STAGE_RESET,
     STAGE_DEFAULT,
     STAGE_INITENV,
@@ -72,14 +75,13 @@ enum checkStageLTE{
     STAGE_CHIPTEMP,
     STAGE_NDISDUP,
     STAGE_NDISSTATQRY,
+    STAGE_GET_SPECIAL_DATA,
     STAGE_CHECK_IP,
     STAGE_CHECK_PING,
 
     STAGE_RESULT_SUCCESS,
     STAGE_RESULT_FAILED,
     STAGE_RESULT_UNKNOWN,
-
-    STAGE_REFRESH_BASE_INFO,
 
     STAGE_PARSE_SIMPLE,
     STAGE_PARSE_OFF,
@@ -99,7 +101,6 @@ enum checkStageLTE{
     STAGE_DISPLAY_BOX,
     STAGE_DISPLAY_LINEEDIT,
     STAGE_DISPLAY_NOTES,
-    STAGE_DISPLAY_NSEC,
 };
 typedef struct _dialingBaseMsg{
     char checkCnt;
@@ -108,13 +109,14 @@ typedef struct _dialingBaseMsg{
 }dialingBaseMsg_t;
 
 typedef struct _dialingInfo{
-    bool isDialSuccess;
+#define TIME_BUFLEN 32
+    int dialingCnt;
+    char startTime[TIME_BUFLEN];
+    enum checkStageLTE isDialedSuccess;
     enum checkStageLTE currentOperator;
     enum checkStageLTE currentSlot;
     enum checkStageLTE currentStage;
-    int dialingCnt;
-    QDateTime startTime;
-    QDateTime endTime;
+    char endTime[TIME_BUFLEN];
 
     dialingBaseMsg_t reset;
     dialingBaseMsg_t at;

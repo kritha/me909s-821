@@ -63,7 +63,7 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
             emit signalStartDialing(0);
         }else
         {
-            writeLogLTE(LTE_CONNECTED);
+            writeLogLTE(STAGE_RESULT_SUCCESS);
         }
     }
     else
@@ -73,7 +73,7 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
         {
             failedCnt++;
             DEBUG_PRINTF("###########LTE net's access failed.");
-            writeLogLTE(LTE_DISCONNECTED);
+            writeLogLTE(STAGE_RESULT_FAILED);
             if(failedCnt > NET_ACCESS_FAILEDCNT_MAX)
             {
                 DEBUG_PRINTF("Warning: Net access failed so many times that have to restart dialing!");
@@ -82,7 +82,7 @@ int threadLTENetMonitor::slotNetStateMonitor(void)
             }
         }else
         {
-            writeLogLTE(LTE_CONNECTED);
+            writeLogLTE(STAGE_RESULT_SUCCESS);
             DEBUG_PRINTF("###########LTE net's access looks good.");
         }
     }
@@ -166,7 +166,7 @@ int threadLTENetMonitor::writeLogLTE(checkStageLTE c)
     {
     case STAGE_RESULT_SUCCESS:
     {
-        if(LTE_CONNECTED != lastTimeStatus)
+        if(STAGE_RESULT_SUCCESS != lastTimeStatus)
         {
             //-e 表示开启转义, "\c"表示不换行
             //cmd = QString("echo -e ");
@@ -191,7 +191,7 @@ int threadLTENetMonitor::writeLogLTE(checkStageLTE c)
     }
     case STAGE_RESULT_FAILED:
     {
-        if(LTE_DISCONNECTED != lastTimeStatus)
+        if(STAGE_RESULT_FAILED != lastTimeStatus)
         {
             cmd = QString("echo ");
             cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
