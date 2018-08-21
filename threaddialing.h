@@ -22,6 +22,11 @@
 
 #include "global.h"
 
+#include <iostream>
+using namespace std;
+#include "tinyxml2.h"
+using namespace tinyxml2;
+
 class threadDialing: public QThread
 {
     Q_OBJECT
@@ -55,18 +60,21 @@ public:
 public slots:
     int slotMonitorTimerHandler(void);
     int slotRunDialing(checkStageLTE currentStage = STAGE_DEFAULT);
+private:
+    int createLogFile(QString dirFullPath);
+    int writeLogLTE(checkStageLTE c);
+    int createConfigXMLFile(const char* xmlPath);
+    int queryConfigXMLWholeFile(const char* xmlPath);
 signals:
     void signalDisplay(char stage, QString result);
 protected:
-    QTimer monitorTimer;
-    QMutex mutexDial;
-    //QMutex mutexMoniHandler;
-
     int fd;
     char nodePath[BOXV3_NODEPATH_LENGTH];
 
-    dialingInfo_t dialingInfo;
+    QMutex mutexDial;
+    QTimer monitorTimer;
     QMutex mutexInfo;
+    dialingInfo_t dialingInfo;
     void initDialingState(dialingInfo_t &info);
 
     void run(void);

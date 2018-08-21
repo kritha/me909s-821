@@ -5,7 +5,7 @@
 #include <strings.h>
 #include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.8.7"
+#define BOXV3CHECKAPP_VERSION "V0.8.8"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -22,6 +22,9 @@
 #define LTE_MODULE_NETNODENAME "usb0"
 #define INTERNET_ACCESS_POINT  "8.8.8.8"
 #define NET_ACCESS_FAILEDCNT_MAX    2
+#define NET_ACCESS_CHECKPOINT_MAXCNT 3
+
+#define APN_NODE_INFO_LEGNTH    64
 
 #define NET_ACCESS_LOG_DIR "/tmp/lte"
 #define NET_ACCESS_LOG_FILENAME "logLTE.txt"
@@ -110,9 +113,30 @@ typedef struct _dialingBaseMsg{
     char meAckMsg[AT_ACK_RESULT_INFO_LENGTH];
 }dialingBaseMsg_t;
 
+typedef struct _apnNodeInfo{
+    char apn[APN_NODE_INFO_LEGNTH];
+    char name[APN_NODE_INFO_LEGNTH];
+    char proxy[APN_NODE_INFO_LEGNTH];
+    char server[APN_NODE_INFO_LEGNTH];
+    char port[APN_NODE_INFO_LEGNTH];
+    char user[APN_NODE_INFO_LEGNTH];
+    char passwd[APN_NODE_INFO_LEGNTH];
+    char mmsc[APN_NODE_INFO_LEGNTH];
+    char mmsproxy[APN_NODE_INFO_LEGNTH];
+    char mmsport[APN_NODE_INFO_LEGNTH];
+    char mcc[APN_NODE_INFO_LEGNTH];
+    char mnc[APN_NODE_INFO_LEGNTH];
+    char mumeric[APN_NODE_INFO_LEGNTH];
+    char type[APN_NODE_INFO_LEGNTH];
+
+    int dialingCnt;
+    int successCnt;
+    int failedCnt;
+    char dnsAddr[NET_ACCESS_CHECKPOINT_MAXCNT][APN_NODE_INFO_LEGNTH];
+}apnNodeInfo_t;
+
 typedef struct _dialingInfo{
 #define TIME_BUFLEN 32
-    int dialingCnt;
     char startTime[TIME_BUFLEN];
     enum checkStageLTE isDialedSuccess;
     enum checkStageLTE currentOperator;

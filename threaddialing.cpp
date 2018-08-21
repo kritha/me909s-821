@@ -1114,7 +1114,7 @@ int threadDialing::slotRunDialing(enum checkStageLTE currentStage)
     //volatile enum checkStageLTE currentStage;
     enum checkStageLTE currentMode = STAGE_MODE_DIAL;
 
-    //just one slot be triggered at one time
+    //just one slot could be triggered at one time
     if(mutexDial.tryLock())
     {
         //currentStage = beginStage;
@@ -1152,11 +1152,15 @@ looper_stage_branch:
         {
             if(STAGE_MODE_REFRESH != currentMode)
             {
+                notes = "Dialing start: ";
                 emit signalDisplay(STAGE_DEFAULT, QString("Dialing..."));
             }else
             {
+                notes = "Refresh env start: ";
                 emit signalDisplay(STAGE_DEFAULT, QString("Refresh..."));
             }
+            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
             //check for the internet access before dialing
             ret = checkInternetAccess(1);
             if(!ret)
@@ -1175,16 +1179,6 @@ looper_stage_branch:
             //init env
             initDialingState(dialingInfo);
             //emit signalDisplay(STAGE_DISPLAY_INIT, QString());
-
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                notes = "Dialing start: ";
-            }else
-            {
-                notes = "Refresh env start: ";
-            }
-            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
-            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
         }
         case STAGE_NODE:
         {
@@ -1432,6 +1426,221 @@ looper_stage_branch:
     return ret;
 }
 
+
+int threadDialing::createLogFile(QString dirFullPath)
+{
+    int ret = 0;
+
+    if(dirFullPath.isEmpty())
+    {
+        ret = -EINVAL;
+        ERR_RECORDER(NULL);
+        DEBUG_PRINTF();
+    }else
+    {
+        //clean log dir
+        QString cmd("rm -rf ");
+        cmd += dirFullPath;
+        system(cmd.toLocal8Bit().data());
+        //create log dir
+        cmd = QString("mkdir -p ");
+        cmd += dirFullPath;
+        system(cmd.toLocal8Bit().data());
+        //create log file
+        dirFullPath += "/";
+        dirFullPath += NET_ACCESS_LOG_FILENAME;
+        cmd = QString("touch ");
+        cmd += dirFullPath;
+        ret = system(cmd.toLocal8Bit().data());
+#if 0
+        //write item info
+        cmd = QString("echo 'connect\t\t\tdisconnect\t\t\tconnectMax\n' > ");
+        cmd += dirFullPath;
+        system(cmd.toLocal8Bit().data());
+#endif
+    }
+
+    return ret;
+}
+
+int threadDialing::writeLogLTE(checkStageLTE c)
+{
+    int ret = 0;
+    QString cmd;
+    static enum checkStageLTE lastTimeStatus;
+
+    switch(c)
+    {
+    case STAGE_RESULT_SUCCESS:
+    {
+        if(STAGE_RESULT_SUCCESS != lastTimeStatus)
+        {
+            //-e 表示开启转义, "\c"表示不换行
+            //cmd = QString("echo -e ");
+            cmd = QString("echo ");
+            cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
+            //cmd += QString("(connected) \"\\c\" >> ");
+            cmd += QString(" connected >> ");
+            cmd += QString(NET_ACCESS_LOG_DIR);
+            cmd += QString("/");
+            cmd += QString(NET_ACCESS_LOG_FILENAME);
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("---cmd: %s", cmd.toLocal8Bit().data());
+
+            cmd = "net well: ";
+            cmd += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            emit signalDisplay(STAGE_DISPLAY_NOTES, cmd);
+        }else
+        {
+            DEBUG_PRINTF("Already has been written LTE_CONNECTED.");
+        }
+        break;
+    }
+    case STAGE_RESULT_FAILED:
+    {
+        if(STAGE_RESULT_FAILED != lastTimeStatus)
+        {
+            cmd = QString("echo ");
+            cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
+            cmd += QString(" disconnected >> ");
+            cmd += QString(NET_ACCESS_LOG_DIR);
+            cmd += QString("/");
+            cmd += QString(NET_ACCESS_LOG_FILENAME);
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
+
+            cmd = "net bad: ";
+            cmd += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            emit signalDisplay(STAGE_DISPLAY_NOTES, cmd);
+        }else
+        {
+            DEBUG_PRINTF("Already has been written LTE_DISCONNECTED.");
+            break;
+        }
+    }
+    default:
+    {
+        break;
+    }
+    }
+
+    lastTimeStatus = c;
+
+    return ret;
+}
+
+int threadDialing::createConfigXMLFile(const char *xmlPath)
+{
+    int ret = 0;
+
+    XMLDocument doc;
+    if(3 != doc.LoadFile(xmlPath))
+    {
+        ret = -EAGAIN;
+        cout << "File has been existed!" << endl;
+    }else
+    {
+        //add declaration
+        XMLDeclaration* declaration = doc.NewDeclaration();
+        doc.InsertFirstChild(declaration);
+
+        //0. add baseNode right latest node
+        XMLElement* root = doc.NewElement("NodeList");
+        doc.InsertEndChild(root);
+
+#define APN_LIST_CNT_KNOWN 4
+        XMLElement* apnNode[APN_LIST_CNT_KNOWN];
+        char apnList[APN_LIST_CNT_KNOWN][32] = {
+            "CHINA MOBILE",
+            "CMCC",
+            "CHN-UNICOM",
+            "CHN-CT"
+        };
+
+        for(int i=0; i<APN_LIST_CNT_KNOWN; i++)
+        {
+            DEBUG_PRINTF("********i:%d.", i);
+            //1.0 add apnNode right latest node, and arrtibutes
+            apnNode[i] = doc.NewElement("apnNode");
+            apnNode[i]->SetAttribute("apn", apnList[i]);
+            root->InsertEndChild(apnNode[i]);
+            //1.2 add testNode right latest node for apnNode
+            XMLElement*  name = doc.NewElement("name");
+            name->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  user = doc.NewElement("user");
+            user->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  pin = doc.NewElement("pin");
+            pin->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  type = doc.NewElement("type");
+            type->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  passwd = doc.NewElement("passwd");
+            passwd->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  mcc = doc.NewElement("mcc");
+            mcc->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  mnc = doc.NewElement("mnc");
+            mnc->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  server = doc.NewElement("server");
+            server->InsertFirstChild(doc.NewText("default"));
+            XMLElement*  port = doc.NewElement("port");
+            port->InsertFirstChild(doc.NewText("default"));
+            apnNode[i]->InsertEndChild(name);
+            apnNode[i]->InsertEndChild(user);
+            apnNode[i]->InsertEndChild(pin);
+            apnNode[i]->InsertEndChild(type);
+            apnNode[i]->InsertEndChild(passwd);
+            apnNode[i]->InsertEndChild(mcc);
+            apnNode[i]->InsertEndChild(mnc);
+            apnNode[i]->InsertEndChild(server);
+            apnNode[i]->InsertEndChild(port);
+        }
+
+        ret = doc.SaveFile(xmlPath);
+    }
+
+    return ret;
+}
+
+int threadDialing::queryConfigXMLWholeFile(const char *xmlPath)
+{
+    int ret = 0;
+    XMLDocument doc;
+
+    if(0 != (ret = doc.LoadFile(xmlPath)))
+    {
+        cout << "load xml file failed" << endl;
+    }else
+    {
+        XMLElement* root = doc.RootElement();
+        XMLElement* apnNode = root->FirstChildElement();
+        if(apnNode)
+        {
+            cout << "###########################" << endl;
+            while(apnNode)
+            {
+                cout << "----------------------------" << endl;
+                const XMLAttribute* nodeAttr = apnNode->FirstAttribute();
+                while(nodeAttr)
+                {
+                    cout << nodeAttr->Name() << ":" << nodeAttr->Value() << endl;
+                    nodeAttr = nodeAttr->Next();
+                }
+                const XMLElement* baseInfo = apnNode->FirstChildElement();
+                while(baseInfo)
+                {
+                    cout << baseInfo->Name() << ":" << baseInfo->GetText() << endl;
+                    baseInfo = baseInfo->NextSiblingElement();
+                }
+                apnNode = apnNode->NextSiblingElement();
+            }
+            cout << "###########################" << endl;
+        }else
+        {
+            DEBUG_PRINTF("Error: xml file is empty.");
+        }
+    }
+    return ret;
+}
+
 void threadDialing::initDialingState(dialingInfo_t &info)
 {
     bzero(&info, sizeof(dialingInfo_t));
@@ -1439,10 +1648,19 @@ void threadDialing::initDialingState(dialingInfo_t &info)
 
 void threadDialing::run()
 {
+    //create log file in the log dir
+    this->createLogFile(NET_ACCESS_LOG_DIR);
+
     QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler, Qt::QueuedConnection);
 
     monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
 
+#if 1//for test
+    DEBUG_PRINTF("xml test begin.");
+    createConfigXMLFile("/opt/lte.config");
+    queryConfigXMLWholeFile("/opt/lte.config");
+    DEBUG_PRINTF("xml test end.");
+#endif
     exec();
 }
 
