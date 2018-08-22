@@ -32,6 +32,7 @@ class threadDialing: public QThread
     Q_OBJECT
 public:
     threadDialing();
+    ~threadDialing();
     void showBuf(char* buf, int len);
     void showErrInfo(errInfo_t info);
     int setSerialPortNodeProperty(int fd, int databits, int stopbits, int parity, int speed);
@@ -45,6 +46,7 @@ public:
     void exitSerialPortFromTtyLte(int* fd);
 
 
+    void createOutputFile(void);
     int parseConfigFile(char *nodePath, int bufLen, char* key);
     int tryBestToCleanSerialIO(int fd);
     int sendCMDandCheckRecvMsg(int fd, char *cmd, checkStageLTE key, int retryCnt, int RDndelay);
@@ -52,7 +54,7 @@ public:
     int recvMsgFromATModuleAndParsed(int fd, checkStageLTE key, int nsec);
 
     char *getKeyLineFromBuf(char *buf, char *key);
-    char *cutAskFromKeyLine(char* keyLine, int keyLineLen, const char *srcLine, int argIndex);
+    char *cutAskFromKeyLine(char* keyLine, int keyLineLen, const char *srcLine, int argIndex, const char firstToken = ' ');
     int checkIP(char emergencyFlag);
     int checkInternetAccess(char emergencyFlag = 0);
     int getNativeNetworkInfo(QString ifName, QString &ipString);
@@ -63,19 +65,23 @@ public slots:
 private:
     int createLogFile(QString dirFullPath);
     int writeLogLTE(checkStageLTE c);
-    int createConfigXMLFile(const char* xmlPath);
-    int queryConfigXMLWholeFile(const char* xmlPath);
+    int tryCreateDefaultXMLConfigFile(const char* xmlPath);
+    int queryWholeXMLConfigFile(const char* xmlPath);
 signals:
     void signalDisplay(char stage, QString result);
 protected:
     int fd;
     char nodePath[BOXV3_NODEPATH_LENGTH];
-
     QMutex mutexDial;
     QTimer monitorTimer;
     QMutex mutexInfo;
+    dialingInfo_t dialingInfo_tmp;
     dialingInfo_t dialingInfo;
-    void initDialingState(dialingInfo_t &info);
+    apnNodeInfo_t* apnNodeList;
+    apnNodeInfo_t* newApnNodeAndInit(apnNodeInfo_t **head, QMutex& m);
+    int releaseNodeList(apnNodeInfo_t* head);
+    apnNodeInfo_t *parseWholeXMLConfigFileAndGenerateNodeList(const char* xmlPath, apnNodeInfo_t **head, QMutex& m);
+    int getApnNodeListFromConfigFile(const char* xmlPath = APNNODE_XML_CONFIG_FILE);
 
     void run(void);
 };

@@ -5,7 +5,7 @@
 #include <strings.h>
 #include <errno.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.8.8"
+#define BOXV3CHECKAPP_VERSION "V0.8.9"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -28,6 +28,7 @@
 
 #define NET_ACCESS_LOG_DIR "/tmp/lte"
 #define NET_ACCESS_LOG_FILENAME "logLTE.txt"
+#define APNNODE_XML_CONFIG_FILE "/etc/dialLTE.config"
 
 #define TIMESPEND_WHOLE_DIALING   30      //s
 
@@ -78,6 +79,8 @@ enum checkStageLTE{
     STAGE_CHIPTEMP,
     STAGE_NDISDUP,
     STAGE_NDISSTATQRY,
+    STAGE_CCLK,
+    STAGE_EONS,
     STAGE_GET_SPECIAL_DATA,
     STAGE_CHECK_IP,
     STAGE_CHECK_PING,
@@ -107,11 +110,49 @@ enum checkStageLTE{
     STAGE_DISPLAY_CNT_SUCCESS,
     STAGE_DISPLAY_CNT_FAILED,
 };
+
 typedef struct _dialingBaseMsg{
     char checkCnt;
     enum checkStageLTE result;
     char meAckMsg[AT_ACK_RESULT_INFO_LENGTH];
 }dialingBaseMsg_t;
+
+typedef struct _dialingInfo{
+#define TIME_BUFLEN 32
+    char startTime[TIME_BUFLEN];
+    enum checkStageLTE isDialedSuccess;
+    enum checkStageLTE currentOperator;
+    enum checkStageLTE currentSlot;
+    enum checkStageLTE currentStage;
+    char endTime[TIME_BUFLEN];
+
+    //module
+    dialingBaseMsg_t cgmi;  //module operator info
+    dialingBaseMsg_t cgsn;  //module AT soft version info
+    dialingBaseMsg_t imei;  //module serial number info
+    dialingBaseMsg_t gcap;  //means of communication of module support
+
+    //sim
+    dialingBaseMsg_t reset;
+    dialingBaseMsg_t at;
+    dialingBaseMsg_t swit;
+    dialingBaseMsg_t cpin;
+    dialingBaseMsg_t sysinfoex;
+    dialingBaseMsg_t cops;
+    dialingBaseMsg_t ndisdup;
+    dialingBaseMsg_t qry;
+    dialingBaseMsg_t cclk;
+    dialingBaseMsg_t eons;
+    dialingBaseMsg_t sleepcfg;
+
+
+    dialingBaseMsg_t csq;
+    dialingBaseMsg_t iccid;
+    dialingBaseMsg_t chiptemp;
+
+    dialingBaseMsg_t ip;
+    dialingBaseMsg_t ping;
+}dialingInfo_t;
 
 typedef struct _apnNodeInfo{
     char apn[APN_NODE_INFO_LEGNTH];
@@ -128,38 +169,17 @@ typedef struct _apnNodeInfo{
     char mnc[APN_NODE_INFO_LEGNTH];
     char mumeric[APN_NODE_INFO_LEGNTH];
     char type[APN_NODE_INFO_LEGNTH];
+    char pingCheckDns[NET_ACCESS_CHECKPOINT_MAXCNT][APN_NODE_INFO_LEGNTH];
 
+    dialingBaseMsg_t imeiLastTime;//module serial number which was recorded last time
+    dialingBaseMsg_t iccidLastTime;//sim serial number which was recorded last time
     int dialingCnt;
+    int refreshCnt;
     int successCnt;
     int failedCnt;
-    char dnsAddr[NET_ACCESS_CHECKPOINT_MAXCNT][APN_NODE_INFO_LEGNTH];
+    dialingInfo_t* dialingInfo;  //current base dialing info
+    struct _apnNodeInfo* next;
 }apnNodeInfo_t;
-
-typedef struct _dialingInfo{
-#define TIME_BUFLEN 32
-    char startTime[TIME_BUFLEN];
-    enum checkStageLTE isDialedSuccess;
-    enum checkStageLTE currentOperator;
-    enum checkStageLTE currentSlot;
-    enum checkStageLTE currentStage;
-    char endTime[TIME_BUFLEN];
-
-    dialingBaseMsg_t reset;
-    dialingBaseMsg_t at;
-    dialingBaseMsg_t swit;
-    dialingBaseMsg_t cpin;
-    dialingBaseMsg_t sysinfoex;
-    dialingBaseMsg_t cops;
-    dialingBaseMsg_t ndisdup;
-    dialingBaseMsg_t qry;
-
-    dialingBaseMsg_t csq;
-    dialingBaseMsg_t iccid;
-    dialingBaseMsg_t chiptemp;
-
-    dialingBaseMsg_t ip;
-    dialingBaseMsg_t ping;
-}dialingInfo_t;
 
 extern errInfo_t errInfo;
 

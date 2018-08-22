@@ -6,9 +6,27 @@ threadDialing::threadDialing()
     fd = -1;
     bzero(nodePath, BOXV3_NODEPATH_LENGTH);
 
-    initDialingState(dialingInfo);
+    //init env
+    bzero(&dialingInfo, sizeof(dialingInfo_t));
+    bzero(&dialingInfo_tmp, sizeof(dialingInfo_t));
+    apnNodeList = NULL;
+
+    createOutputFile();
+
+    if(0 != getApnNodeListFromConfigFile())
+    {
+        DEBUG_PRINTF("Error");
+    }else
+    {
+        DEBUG_PRINTF("Success");
+    }
 
     moveToThread(this);
+}
+
+threadDialing::~threadDialing()
+{
+    releaseNodeList(apnNodeList);
 }
 
 void threadDialing::showBuf(char *buf, int len)
@@ -229,6 +247,29 @@ void threadDialing::exitSerialPortFromTtyLte(int* fd)
     }
 }
 
+void threadDialing::createOutputFile()
+{
+    system("rm -rf /tmp/4G");
+    system("mkdir -p /tmp/4G");
+    system("touch /tmp/4G/devicenode");
+    system("touch /tmp/4G/module");
+    system("touch /tmp/4G/simswitch");
+    system("touch /tmp/4G/cpin");
+    system("touch /tmp/4G/sysinfoex");
+    system("touch /tmp/4G/sysinfoex0");
+    system("touch /tmp/4G/sysinfoex1");
+    system("touch /tmp/4G/cops");
+    system("touch /tmp/4G/ndisstatqry");
+    system("touch /tmp/4G/csq");
+    system("touch /tmp/4G/chiptemp");
+    system("touch /tmp/4G/iccid");
+    system("touch /tmp/4G/cclk");
+    system("touch /tmp/4G/eons");
+    system("touch /tmp/4G/ip");
+    system("touch /tmp/4G/ping");
+    DEBUG_PRINTF("Create output file done.");
+}
+
 
 
 int threadDialing::waitWriteableForFd(int fd, int nsec)
@@ -359,14 +400,14 @@ char* threadDialing::getKeyLineFromBuf(char* buf, char* key)
  * @brief threadDialing::cutAskFromKeyLine
  * NOtes: this func can just be used once for one keyLine, otherwise there will be a segmentfault
  * @param keyLine
- * @param argIndex : 0 - n
+ * @param argIndex : -1 ~ 0 ~ n
  * @return string pointer of the argIndex if it's found, and NULL when failed
  */
-char *threadDialing::cutAskFromKeyLine(char *keyLine, int keyLineLen, const char* srcLine, int argIndex)
+char *threadDialing::cutAskFromKeyLine(char *keyLine, int keyLineLen, const char* srcLine, int argIndex, const char firstToken)
 {
     char* token = NULL;
 
-    if(argIndex < 0) argIndex = 0;
+    //if(argIndex < 0) argIndex = 0;
 
     if(!keyLine || !srcLine)
     {
@@ -383,13 +424,33 @@ char *threadDialing::cutAskFromKeyLine(char *keyLine, int keyLineLen, const char
             strncpy(keyLine, srcLine, strlen(srcLine));
         }
         //get the delim string after ":"
-        strtok(keyLine, ":");
-        token = strtok(NULL, ":");
-        //get the delim string before ","
-        token = strtok(token, ",");
-        while((!token) && (--argIndex >= 0))
+        switch(firstToken)
         {
-            token = strtok(NULL, ",");
+        case ':':
+        {
+            strtok(keyLine, ":");
+            token = strtok(NULL, ":");
+            break;
+        }
+        default:
+        {
+            strtok(keyLine, " ");
+            token = strtok(NULL, " ");
+            break;
+        }
+        }
+
+        if(argIndex >= 0)
+        {
+            //get the delim string before ","
+            token = strtok(token, ",");
+            while(token && (--argIndex >= 0))
+            {
+                DEBUG_PRINTF("token:%s(argIndex:%d)", token, argIndex);
+                token = strtok(NULL, ",");
+            }
+            if(token)
+                DEBUG_PRINTF("token:%s", token);
         }
     }
 
@@ -488,6 +549,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
     char* linep = NULL;
     char* delim = NULL;
     char* linepTmp = NULL;
+    QString cmd;
 
     mutexInfo.lock();
 
@@ -535,6 +597,12 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             info.at.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"OK");
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(linep) cmd += QString(linep);
+            cmd += QString(" > /tmp/4G/module");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.at.result = STAGE_RESULT_SUCCESS;
@@ -551,6 +619,13 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             info.iccid.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"^ICCID:");
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/iccid");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.iccid.result = STAGE_RESULT_SUCCESS;
@@ -566,7 +641,14 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         case STAGE_CPIN:
         {
             info.cpin.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"READY");
+            linep = getKeyLineFromBuf(buf, (char*)"+CPIN:");
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/cpin");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.cpin.result = STAGE_RESULT_SUCCESS;
@@ -587,8 +669,31 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
              * <srv_domain>：表示系统服务域。
                     0  无服务, 1  仅 CS 服务, 2  仅 PS 服务, 3  PS+CS 服务, 4  CS、PS 均未注册，并处于搜索状态, 255  CDMA（暂不支持）
             */
+
+            DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
             info.sysinfoex.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"^SYSINFOEX:");
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/sysinfoex");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/sysinfoex0");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/sysinfoex1");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
+
             if(linep)
             {
                 strncpy(info.sysinfoex.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
@@ -625,6 +730,13 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             info.cops.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/cops");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.cops.result = STAGE_RESULT_SUCCESS;
@@ -662,6 +774,13 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             info.swit.checkCnt++;
             /*'ret' which is very special at here, which is the num of channel, or -errno with errno*/
             linep = getKeyLineFromBuf(buf, (char*)"^SIMSWITCH:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/simswitch");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.swit.result = STAGE_RESULT_SUCCESS;
@@ -687,6 +806,20 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             info.csq.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"+CSQ:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/csq");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/csq0");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.csq.result = STAGE_RESULT_SUCCESS;
@@ -705,6 +838,21 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             info.chiptemp.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"^CHIPTEMP:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/chiptemp");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 5);
+            DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/chiptemp0");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 info.chiptemp.result = STAGE_RESULT_SUCCESS;
@@ -723,6 +871,13 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             info.qry.checkCnt++;
             linep = getKeyLineFromBuf(buf, (char*)"^NDISSTATQRY:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/4G/ndisstatqry");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
             {
                 strncpy(info.qry.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
@@ -746,10 +901,66 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             }
             break;
         }
+        case STAGE_CCLK:
+        {
+            info.cclk.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"+CCLK:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            //cmd.replace("\"", " ");
+            cmd += QString(" > /tmp/4G/cclk");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            if(linep)
+            {
+                strncpy(info.cclk.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                info.cclk.result = STAGE_RESULT_SUCCESS;
+            }else
+            {
+                info.cclk.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.cclk.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+            }
+            break;
+        }
+        case STAGE_EONS:
+        {
+            info.eons.checkCnt++;
+            linep = getKeyLineFromBuf(buf, (char*)"^EONS:");
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            //cmd.replace("\"", " ");
+            cmd += QString(" > /tmp/4G/eons");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            if(linep)
+            {
+                strncpy(info.eons.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                info.eons.result = STAGE_RESULT_SUCCESS;
+            }else
+            {
+                info.eons.result = STAGE_RESULT_UNKNOWN;
+                bzero(info.eons.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+            }
+            break;
+        }
         case STAGE_CHECK_IP:
         {
             info.ip.checkCnt++;
             linep = buf;
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(linep) cmd += QString(linep);
+            cmd += QString(" > /tmp/4G/ip");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(len > 0)
             {
                 info.ip.result = STAGE_RESULT_SUCCESS;
@@ -777,6 +988,12 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
                 strcpy(info.ping.meAckMsg, "Bad.");
             }
             linep = info.ping.meAckMsg;
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(linep) cmd += QString(linep);
+            cmd += QString(" > /tmp/4G/ping");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
 
             break;
         }
@@ -1177,7 +1394,7 @@ looper_stage_branch:
         case STAGE_INITENV:
         {
             //init env
-            initDialingState(dialingInfo);
+            bzero(&dialingInfo, sizeof(dialingInfo_t));
             //emit signalDisplay(STAGE_DISPLAY_INIT, QString());
         }
         case STAGE_NODE:
@@ -1186,11 +1403,17 @@ looper_stage_branch:
             ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
             if(ret)
             {
+                system("echo 'nodeviceNode' > /tmp/4G/devicenode");
                 emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
                 currentStage = STAGE_RESULT_FAILED;
                 goto looper_stage_branch;
             }else
             {
+                QString cmd("echo ");
+                if(nodePath) cmd += QString(nodePath);
+                cmd += QString(" > /tmp/4G/devicenode");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
                 emit signalDisplay(STAGE_NODE, QString(nodePath));
             }
         }
@@ -1341,8 +1564,24 @@ looper_stage_branch:
         {
             //some need to known
             sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", STAGE_CSQ, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT+CCLK?", STAGE_CCLK, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT^EONS=1", STAGE_EONS, 2, 1);
             sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", STAGE_CHIPTEMP, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", STAGE_ICCID, 2, 1);
+            if(1)//use iccid to refresh cnt data
+            {
+                if(strlen(dialingInfo.iccid.meAckMsg) > 0)
+                    strcpy(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg);
+                sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", STAGE_ICCID, 2, 1);
+                if((0 != strcmp(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg)))
+                {
+                    DEBUG_PRINTF("Warning: new SIM card insert in the slot with a new iccid.");
+                    successCnt = 0;
+                    failedCnt = 0;
+                    emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(successCnt));
+                    emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(failedCnt));
+                }
+            }
+
         }
         case STAGE_CHECK_PING:
         {
@@ -1529,7 +1768,7 @@ int threadDialing::writeLogLTE(checkStageLTE c)
     return ret;
 }
 
-int threadDialing::createConfigXMLFile(const char *xmlPath)
+int threadDialing::tryCreateDefaultXMLConfigFile(const char *xmlPath)
 {
     int ret = 0;
 
@@ -1548,13 +1787,12 @@ int threadDialing::createConfigXMLFile(const char *xmlPath)
         XMLElement* root = doc.NewElement("NodeList");
         doc.InsertEndChild(root);
 
-#define APN_LIST_CNT_KNOWN 4
+#define APN_LIST_CNT_KNOWN 3
         XMLElement* apnNode[APN_LIST_CNT_KNOWN];
         char apnList[APN_LIST_CNT_KNOWN][32] = {
-            "CHINA MOBILE",
-            "CMCC",
-            "CHN-UNICOM",
-            "CHN-CT"
+            "CMNET",
+            "3GNET",
+            "CTNET",
         };
 
         for(int i=0; i<APN_LIST_CNT_KNOWN; i++)
@@ -1600,7 +1838,7 @@ int threadDialing::createConfigXMLFile(const char *xmlPath)
     return ret;
 }
 
-int threadDialing::queryConfigXMLWholeFile(const char *xmlPath)
+int threadDialing::queryWholeXMLConfigFile(const char *xmlPath)
 {
     int ret = 0;
     XMLDocument doc;
@@ -1641,26 +1879,203 @@ int threadDialing::queryConfigXMLWholeFile(const char *xmlPath)
     return ret;
 }
 
-void threadDialing::initDialingState(dialingInfo_t &info)
+apnNodeInfo_t *threadDialing::newApnNodeAndInit(apnNodeInfo_t** head, QMutex &m)
 {
-    bzero(&info, sizeof(dialingInfo_t));
+    static char hasHead = 0;
+    apnNodeInfo_t* tmpNodep=NULL;
+    apnNodeInfo_t* newNodep=NULL;
+
+    if(!head)
+    {
+        ERR_RECORDER(NULL);
+        DEBUG_PRINTF("Error: head pointer is NULL.");
+    }else
+    {
+        DEBUG_PRINTF("**head:%p", head);
+        DEBUG_PRINTF("*head:%p", *head);
+        DEBUG_PRINTF("tmpNodep:%p", tmpNodep);
+        tmpNodep = *head;
+        DEBUG_PRINTF("tmpNodep:%p", tmpNodep);
+        // new node
+        m.lock();
+        newNodep = (apnNodeInfo_t*)malloc(sizeof(apnNodeInfo_t));
+        if(newNodep)
+        {
+            DEBUG_PRINTF("newNodep:%p", newNodep);
+            bzero(newNodep, sizeof(apnNodeInfo_t));
+            //if it's a list, add the new node to it's end
+            if(NULL == tmpNodep)
+            {
+                DEBUG_PRINTF();
+                *head = newNodep;
+            }else
+            {
+                if(0 != hasHead)
+                {
+                    DEBUG_PRINTF();
+                    while(NULL != tmpNodep->next)
+                    {
+                        DEBUG_PRINTF("tmpNodep->next:%p", tmpNodep->next);
+                        tmpNodep = tmpNodep->next;
+                        DEBUG_PRINTF("tmpNodep:%p", tmpNodep);
+                    }
+                }else
+                {
+                    DEBUG_PRINTF();
+                    hasHead = 1;
+                }
+                tmpNodep->next = newNodep;
+                DEBUG_PRINTF();
+            }
+        }else
+        {
+            DEBUG_PRINTF("malloc for apnNodeInfo_t newNodep failed.");
+        }
+        m.unlock();
+    }
+
+    return newNodep;
+}
+
+int threadDialing::releaseNodeList(apnNodeInfo_t *head)
+{
+    int ret = 0;
+    apnNodeInfo_t* nextNode = NULL;
+
+    if(!head)
+    {
+        ret = -ENODATA;
+        DEBUG_PRINTF("Warning: can't free head, it's not exist or already empty.");
+    }else
+    {
+        do{
+            DEBUG_PRINTF("APN:%s\n", head->apn);
+            nextNode = head->next;
+            free(head);
+            head = nextNode;
+        }while(NULL != head);
+    }
+
+    return ret;
+}
+
+apnNodeInfo_t *threadDialing::parseWholeXMLConfigFileAndGenerateNodeList(const char *xmlPath, apnNodeInfo_t** head, QMutex &m)
+{
+    apnNodeInfo_t* newNodep = NULL;
+    XMLDocument doc;
+
+    if(0 != doc.LoadFile(xmlPath))
+    {
+        cout << "load xml file failed" << endl;
+    }else
+    {
+        XMLElement* root = doc.RootElement();
+        XMLElement* apnNode = root->FirstChildElement();
+        if(!apnNode)
+        {
+            DEBUG_PRINTF("Error: xml file is empty.");
+        }else
+        {
+            DEBUG_PRINTF();
+            cout << "###########################" << endl;
+            while(apnNode)
+            {
+                DEBUG_PRINTF();
+                newNodep = newApnNodeAndInit(head, m);
+                if(!newNodep)
+                {
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF();
+                }else
+                {
+                    DEBUG_PRINTF();
+                }
+
+                cout << "----------------------------" << endl;
+                const XMLAttribute* nodeAttr = apnNode->FirstAttribute();
+                while(nodeAttr)
+                {
+                    if(newNodep)
+                    {
+                        m.lock();
+                        if(0 == strcmp(nodeAttr->Name(), "apn"))
+                            strcpy(newNodep->apn, nodeAttr->Value());
+                        m.unlock();
+                    }
+                    cout << nodeAttr->Name() << ":" << nodeAttr->Value() << endl;
+                    nodeAttr = nodeAttr->Next();
+                }
+                const XMLElement* baseInfo = apnNode->FirstChildElement();
+                while(baseInfo)
+                {
+                    if(newNodep)
+                    {
+                        m.lock();
+                        if(0 == strcmp(baseInfo->Name(), "user"))
+                            strcpy(newNodep->user, baseInfo->GetText());
+                        if(0 == strcmp(baseInfo->Name(), "passwd"))
+                            strcpy(newNodep->passwd, baseInfo->GetText());
+                        m.unlock();
+                    }
+                    cout << baseInfo->Name() << ":" << baseInfo->GetText() << endl;
+                    baseInfo = baseInfo->NextSiblingElement();
+                }
+
+                apnNode = apnNode->NextSiblingElement();
+            }
+            cout << "###########################" << endl;
+        }
+    }
+    return newNodep;
+}
+
+int threadDialing::getApnNodeListFromConfigFile(const char *xmlPath)
+{
+    int ret = 0;
+    //"/etc/dialLTE.config" is default xmlPath
+    if(!xmlPath)
+    {
+        ret = -EINVAL;
+        ERR_RECORDER(NULL);
+        DEBUG_PRINTF("xmlPath is empty!");
+    }else
+    {
+        ret = tryCreateDefaultXMLConfigFile(xmlPath);
+        if((-EAGAIN == ret) || (0 == ret))
+        {
+            DEBUG_PRINTF();
+            if(!parseWholeXMLConfigFileAndGenerateNodeList(xmlPath, &apnNodeList, mutexInfo))
+            {
+                DEBUG_PRINTF("Error: parse config file failed!");
+            }else
+            {
+                DEBUG_PRINTF();
+                //show test
+                const apnNodeInfo_t* node = apnNodeList;
+                while(NULL != node->next)
+                {
+                    DEBUG_PRINTF("{{{{{{{{{{{{{{{{{{{{{{{{");
+                    DEBUG_PRINTF("apn:%s\n", node->apn);
+                    DEBUG_PRINTF("passwd:%s\n", node->passwd);
+                    node = node->next;
+                    DEBUG_PRINTF("}}}}}}}}}}}}}}}}}}}}}}}}");
+                }
+            }
+        }
+    }
+
+    return ret;
 }
 
 void threadDialing::run()
 {
     //create log file in the log dir
-    this->createLogFile(NET_ACCESS_LOG_DIR);
+    //this->createLogFile(NET_ACCESS_LOG_DIR);
 
     QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler, Qt::QueuedConnection);
 
     monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
 
-#if 1//for test
-    DEBUG_PRINTF("xml test begin.");
-    createConfigXMLFile("/opt/lte.config");
-    queryConfigXMLWholeFile("/opt/lte.config");
-    DEBUG_PRINTF("xml test end.");
-#endif
     exec();
 }
 
