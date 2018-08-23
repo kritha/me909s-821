@@ -1384,8 +1384,6 @@ int threadDialing::slotMonitorTimerHandler()
         {
             slotRunDialing(STAGE_MODE_REFRESH);
         }
-        //for display
-        sleep(6);
     }
 
 
@@ -1395,6 +1393,7 @@ int threadDialing::slotMonitorTimerHandler()
         dialingCnt = 0;
     }
 
+    DEBUG_PRINTF("tryCount:%d", tryCount);
     if(TRY_COUNT_INFINITE_SIGN != tryCount)
     {
         if(--tryCount > 0)

@@ -15,6 +15,9 @@ static QString cmdLineParser(QCoreApplication& a)
     QCommandLineOption optArgs("t");
     optArgs.setDescription("try count if dialed failed, default is infinite.");
     optArgs.setValueName("tryCount");
+    QCommandLineOption supportArgs("AT");
+    supportArgs.setDescription("This soft ware support exec with AT<cmd>(like: .\"/a.out ATI\").");
+    supportArgs.setValueName("cmd");
 #endif
     QCommandLineParser parser;
     parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
@@ -22,6 +25,7 @@ static QString cmdLineParser(QCoreApplication& a)
     parser.addHelpOption();
 #ifdef USE_OPTARGS
     parser.addOption(optArgs);
+    parser.addOption(supportArgs);
 #endif
     parser.process(a);
 
@@ -37,7 +41,7 @@ static QString cmdLineParser(QCoreApplication& a)
     DEBUG_PRINTF("tryCount:%d.", tryCount);
 #endif
 
-    return value.contains("RD_ONLY") ? value:QString();
+    return value;
 }
 
 int main(int argc, char *argv[])
@@ -54,25 +58,28 @@ int main(int argc, char *argv[])
     //display
     QObject::connect(&dialing, &threadDialing::signalDisplay, &w, &MainWindow::slotDisplay, Qt::QueuedConnection);
 
-
+    //deal with emergency situation
     signal(SIGINT, emergency_sighandler);
     signal(SIGKILL, emergency_sighandler);
     signal(SIGQUIT, emergency_sighandler);
 
+    //parse cmd argc argv...
     cmdLineParser(a);
 
-    if(argc < 2)
+    if(2 == argc)
     {
-        dialing.start();
-        w.showFullScreen();
-    }else
-    {
+        //support AT cmd arguments
         ret = dialing.initUartAndTryCommunicateWith4GModule_ForTest(&fd, nodePath, (char*)BOXV3_NODEPATH_LTE, argv[1]);
         if(ret)
         {
             dialing.showErrInfo(errInfo);
         }
         return 0;
+    }else
+    {
+        //normal start
+        dialing.start();
+        w.showFullScreen();
     }
 
     return a.exec();
