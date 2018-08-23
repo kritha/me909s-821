@@ -15,7 +15,7 @@ threadDialing::threadDialing()
 
     if(0 != getApnNodeListFromConfigFile())
     {
-        DEBUG_PRINTF("Error");
+        ERR_PRINTF("getApnNodeListFromConfigFile failed!");
     }else
     {
         DEBUG_PRINTF("Success");
@@ -69,7 +69,7 @@ int threadDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits,
     if(0 != tcgetattr(fd, &uartAttr[0]))
     {
         ret = -EACCES;
-        perror("tcgetattr failed.");
+        ERR_PRINTF("tcgetattr failed.");
     }else
     {
         /* 先将新串口配置清0 */
@@ -91,7 +91,7 @@ int threadDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits,
           break;
         default:
             ret = -EINVAL;
-            perror("Unsupported data bit argument.");
+            ERR_PRINTF("Unsupported data bit argument.");
             break;
         }
         /* 设置停止位*/
@@ -105,7 +105,7 @@ int threadDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits,
             break;
         default:
             ret = -EINVAL;
-            perror("Unsupported stop bit argument.");
+            ERR_PRINTF("Unsupported stop bit argument.");
         }
 
         switch(parity)
@@ -141,7 +141,7 @@ int threadDialing::setSerialPortNodeProperty(int fd, int databits, int stopbits,
             break;
         default:
             ret = -EINVAL;
-            perror("Unsupported parity bit argument.");
+            ERR_PRINTF("Unsupported parity bit argument.");
             break;
         }
         /* Set input parity option */
@@ -271,6 +271,7 @@ void threadDialing::createOutputFile()
     system("touch /tmp/lte/cclk");
     system("touch /tmp/lte/eons");
     system("touch /tmp/lte/eons1");
+    system("touch /tmp/lte/cardmode");
     system("touch /tmp/lte/ip");
     system("touch /tmp/lte/ping");
     DEBUG_PRINTF("Create output file done.");
@@ -376,26 +377,31 @@ int threadDialing::initUartAndTryCommunicateWith4GModule_ForTest(int* fdp, char*
     return ret;
 }
 
-char* threadDialing::getKeyLineFromBuf(char* buf, char* key)
+/*
+ * dst's mem len must be equal to buf's
+*/
+char* threadDialing::getKeyLineFromBuf(char*dst, int len, char* buf, char* key)
 {
     char* token = NULL;
     const char ss[2] = "\n";
 
-    if(!buf || !key)
+    if(!dst || !buf || !key)
     {
-        ERR_RECORDER(NULL);
-        return NULL;
-    }
-
-    token = strtok(buf, ss);
-    while(token != NULL)
+        ERR_PRINTF();
+    }else
     {
-        if(strstr(token, key))
+        bzero(dst, len);
+        memcpy(dst, buf, len);
+        token = strtok(dst, ss);
+        while(token != NULL)
         {
-            break;
-        }else
-        {
-            token = strtok(NULL, ss);
+            if(strstr(token, key))
+            {
+                break;
+            }else
+            {
+                token = strtok(NULL, ss);
+            }
         }
     }
 
@@ -536,7 +542,7 @@ int threadDialing::sendCMDandCheckRecvMsg(int fd, char* cmd, checkStageLTE key, 
 
     for(i=0; i<retryCnt; i++)
     {
-        tryBestToCleanSerialIO(fd);
+        //tryBestToCleanSerialIO(fd);
         ret = sendCMDofAT(fd, cmd, strlen(cmd));
         if(!ret)
         {
@@ -554,482 +560,530 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
     int ret = 0;
     char* linep = NULL;
     char* delim = NULL;
-    char* linepTmp = NULL;
+    char* linepTmp = NULL, *bufTmp = NULL;
     QString cmd;
 
     mutexInfo.lock();
 
-    linepTmp = (char*)malloc(len);
-
-    if(!buf || (len <= 0))
+    bufTmp = (char*)malloc(len*2);
+    if(!bufTmp)
     {
-        ERR_RECORDER(NULL);
-        DEBUG_PRINTF();
-        ret = -EINVAL;
-    }
-    else
+        ret = -ENOMEM;
+        ERR_PRINTF("malloc bufTmp failed");
+    }else
     {
-        if((STAGE_CHECK_IP != e) && (STAGE_CHECK_PING != e))
+        linepTmp = bufTmp + len;
+        if(!buf || (len <= 0))
         {
-        //buf, must end with a '\0'
-            buf[len-1] = '\0';
-        }
-
-        switch(e)
-        {
-        case STAGE_PARSE_SIMPLE:
-        {
-            if(!strstr(buf, "OK"))
-                ret = -ENODATA;
-            break;
-        }
-        case STAGE_RESET:
-        {
-            info.reset.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"OK");
-            if(linep)
-            {
-                info.reset.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.reset.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-            }else
-            {
-                info.reset.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.reset.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-            }
-            break;
-        }
-        case STAGE_AT:
-        {
-            info.at.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"OK");
-            DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(linep) cmd += QString(linep);
-            cmd += QString(" > /tmp/lte/module");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.at.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.at.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-            }else
-            {
-                info.at.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.at.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-            }
-            break;
-        }
-        case STAGE_ICCID:
-        {
-            info.iccid.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"^ICCID:");
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/iccid");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.iccid.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.iccid.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-            }else
-            {
-                info.iccid.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.iccid.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-            }
-            break;
-        }
-        case STAGE_CPIN:
-        {
-            info.cpin.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"+CPIN:");
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/cpin");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.cpin.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.cpin.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-            }else
-            {
-                info.cpin.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.cpin.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-            }
-            break;
-        }
-        case STAGE_SYSINFOEX:
-        {
-            /*
-             * <srv_status>：表示系统服务状态。
-                    0  无服务, 1  服务受限, 2  服务有效, 3  区域服务受限, 4  省电或休眠状态
-             * <srv_domain>：表示系统服务域。
-                    0  无服务, 1  仅 CS 服务, 2  仅 PS 服务, 3  PS+CS 服务, 4  CS、PS 均未注册，并处于搜索状态, 255  CDMA（暂不支持）
-            */
-
-            DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
-            info.sysinfoex.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"^SYSINFOEX:");
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/sysinfoex");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/sysinfoex0");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/sysinfoex1");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
-
-            if(linep)
-            {
-                strncpy(info.sysinfoex.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                //check the service domain
-                delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
-                switch(atoi(delim))
-                {
-                case 0:
-                {
-                    info.sysinfoex.result = STAGE_RESULT_FAILED;
-                    ret = -ENOPROTOOPT;
-                    ERR_RECORDER(NULL);
-                    DEBUG_PRINTF("Error: SIM no service");
-                    break;
-                }
-                default:
-                {
-                    info.sysinfoex.result = STAGE_RESULT_SUCCESS;
-                    ret = 0;
-                    DEBUG_PRINTF("Success: SIM in avaliable service domain.");
-                    break;
-                }
-                }
-            }else
-            {
-                info.sysinfoex.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.sysinfoex.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case STAGE_COPS:
-        {
-            info.cops.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"+COPS:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/cops");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 2);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/cops2");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.cops.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.cops.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-
-                if(strstr(linep, "CMCC") || strstr(linep, "CHINA MOBILE"))
-                {
-                    info.currentOperator = STAGE_OPERATOR_MOBILE;
-                }else if(strstr(linep, "CHN-CT"))
-                {
-                    info.currentOperator = STAGE_OPERATOR_TELECOM;
-                }else if(strstr(linep, "CHN-UNICOM"))
-                {
-                    info.currentOperator = STAGE_OPERATOR_UNICOM;
-                }else
-                {
-                    info.cops.result = STAGE_RESULT_FAILED;
-                    info.currentOperator = STAGE_UNKNOWN;
-                    ret = -ENODATA;
-                    ERR_RECORDER(NULL);
-                    DEBUG_PRINTF("");
-                }
-            }else
-            {
-                info.cops.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.cops.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-                DEBUG_PRINTF("no +COPS:");
-            }
-            break;
-        }
-        case STAGE_SIMSWITCH:
-        {
-            info.swit.checkCnt++;
-            /*'ret' which is very special at here, which is the num of channel, or -errno with errno*/
-            linep = getKeyLineFromBuf(buf, (char*)"^SIMSWITCH:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/simswitch");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.swit.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.swit.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                char* chp = getKeyLineFromBuf(linep, (char*)"1");
-                if(chp)
-                {//channel 1
-                    info.currentSlot = STAGE_SLOT_1;
-                }else
-                {//channel 0
-                    info.currentSlot = STAGE_SLOT_0;
-                }
-            }else
-            {
-                info.swit.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.swit.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case STAGE_CSQ:
-        {
-            info.csq.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"+CSQ:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/csq");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/csq0");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.csq.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.csq.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                //delim = cutAskFromKeyLine(linep, 0);
-                //if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
-            }else
-            {
-                info.csq.result = STAGE_RESULT_UNKNOWN;
-                ret = -ENODATA;
-                bzero(info.csq.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-            }
-            break;
-        }
-        case STAGE_CHIPTEMP:
-        {
-            info.chiptemp.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"^CHIPTEMP:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/chiptemp");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 5);
-            DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/chiptemp5");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                info.chiptemp.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.chiptemp.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                //delim = cutAskFromKeyLine(linep, 5);
-                //if(atoi(delim) < SIM_TEMP_VALUE_MAX);
-            }else
-            {
-                info.chiptemp.result = STAGE_RESULT_UNKNOWN;
-                ret = -ENODATA;
-                bzero(info.chiptemp.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-            }
-            break;
-        }
-        case STAGE_NDISSTATQRY:
-        {
-            info.qry.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"^NDISSTATQRY:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/ndisstatqry");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                strncpy(info.qry.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                if(!strstr(linep, "1,,,\"IPV4\""))
-                {
-                    info.qry.result = STAGE_RESULT_FAILED;
-                    ret = -ENODATA;
-                }else
-                {
-                    info.qry.result = STAGE_RESULT_SUCCESS;
-                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
-                    showBuf(linep, BUF_TMP_LENGTH);
-                    DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
-                }
-            }else
-            {
-                info.qry.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.qry.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case STAGE_CCLK:
-        {
-            info.cclk.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"+CCLK:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            //cmd.replace("\"", " ");
-            cmd += QString(" > /tmp/lte/cclk");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                strncpy(info.cclk.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                info.cclk.result = STAGE_RESULT_SUCCESS;
-            }else
-            {
-                info.cclk.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.cclk.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case STAGE_EONS:
-        {
-            info.eons.checkCnt++;
-            linep = getKeyLineFromBuf(buf, (char*)"^EONS:");
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/eons");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            DEBUG_PRINTF();
-            delim = cutAskFromKeyLine(linepTmp, len, linep, 1, ':');
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/eons1");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(linep)
-            {
-                strncpy(info.eons.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
-                info.eons.result = STAGE_RESULT_SUCCESS;
-            }else
-            {
-                info.eons.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.eons.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-                ERR_RECORDER(NULL);
-            }
-            break;
-        }
-        case STAGE_CHECK_IP:
-        {
-            info.ip.checkCnt++;
-            linep = buf;
-            DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(linep) cmd += QString(linep);
-            cmd += QString(" > /tmp/lte/ip");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            if(len > 0)
-            {
-                info.ip.result = STAGE_RESULT_SUCCESS;
-                strncpy(info.ip.meAckMsg, buf, AT_ACK_RESULT_INFO_LENGTH);
-            }else
-            {
-                info.ip.result = STAGE_RESULT_UNKNOWN;
-                bzero(info.ip.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
-                ret = -ENODATA;
-            }
-            break;
-        }
-        case STAGE_CHECK_PING:
-        {
-            info.ping.checkCnt++;
-
-            if(STAGE_RESULT_SUCCESS == len)
-            {
-                info.ping.result = STAGE_RESULT_SUCCESS;
-                strcpy(info.ping.meAckMsg, "OK");
-            }else
-            {
-                info.ping.result = STAGE_RESULT_FAILED;
-                ret = -ENODATA;
-                strcpy(info.ping.meAckMsg, "Bad.");
-            }
-            linep = info.ping.meAckMsg;
-            DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(linep) cmd += QString(linep);
-            cmd += QString(" > /tmp/lte/ping");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-
-            break;
-        }
-        default:
-        {
-            ret = -ENODATA;
             ERR_RECORDER(NULL);
-            break;
+            DEBUG_PRINTF();
+            ret = -EINVAL;
         }
-        }
-        //display
-        QString displayLine = QString(linep);
-        emit signalDisplay(e, displayLine);
+        else
+        {
+            if((STAGE_CHECK_IP != e) && (STAGE_CHECK_PING != e))
+            {
+            //buf, must end with a '\0'
+                buf[len-1] = '\0';
+            }
 
+            /*parse special first*/
+
+            //0 SIMST
+            linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^SIMST:");
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/lte/simst_unreal");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            emit signalDisplay(STAGE_PARSE_SPECIAL_SIMST, (NULL!=linep)?QString(linep):QString());
+
+            //1 CME ERROR
+            linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"+CME ERROR:");
+            delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
+            DEBUG_PRINTF();
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/lte/cme_error");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+
+            emit signalDisplay(STAGE_PARSE_SPECIAL_CME_ERROR, (NULL!=linep)?QString(linep):QString());
+            /*parse special end*/
+
+            switch(e)
+            {
+            case STAGE_PARSE_SIMPLE:
+            {
+                if(!strstr(buf, "OK"))
+                    ret = -ENODATA;
+                break;
+            }
+            case STAGE_RESET:
+            {
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"OK");
+                if(linep)
+                {
+                    info.reset.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.reset.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                }else
+                {
+                    info.reset.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.reset.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                }
+                break;
+            }
+            case STAGE_AT:
+            {
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"OK");
+                DEBUG_PRINTF();
+                cmd = QString("echo ");
+                if(linep) cmd += QString(linep);
+                cmd += QString(" > /tmp/lte/module");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.at.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.at.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                }else
+                {
+                    info.at.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.at.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                }
+                break;
+            }
+            case STAGE_ICCID:
+            {
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^ICCID:");
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                DEBUG_PRINTF();
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/iccid");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.iccid.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.iccid.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                }else
+                {
+                    info.iccid.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.iccid.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                }
+                break;
+            }
+            case STAGE_CPIN:
+            {
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"+CPIN:");
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                DEBUG_PRINTF();
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/cpin");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.cpin.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.cpin.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                }else
+                {
+                    info.cpin.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.cpin.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                }
+                break;
+            }
+            case STAGE_SYSINFOEX:
+            {
+                /*
+                 * <srv_status>：表示系统服务状态。
+                        0  无服务, 1  服务受限, 2  服务有效, 3  区域服务受限, 4  省电或休眠状态
+                 * <srv_domain>：表示系统服务域。
+                        0  无服务, 1  仅 CS 服务, 2  仅 PS 服务, 3  PS+CS 服务, 4  CS、PS 均未注册，并处于搜索状态, 255  CDMA（暂不支持）
+                */
+
+                DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^SYSINFOEX:");
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                DEBUG_PRINTF();
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/sysinfoex");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/sysinfoex0");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/sysinfoex1");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
+
+                if(linep)
+                {
+                    strncpy(info.sysinfoex.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    //check the service domain
+                    delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
+                    switch(atoi(delim))
+                    {
+                    case 0:
+                    {
+                        info.sysinfoex.result = STAGE_RESULT_FAILED;
+                        ret = -ENOPROTOOPT;
+                        ERR_RECORDER(NULL);
+                        DEBUG_PRINTF("Error: SIM no service");
+                        break;
+                    }
+                    default:
+                    {
+                        info.sysinfoex.result = STAGE_RESULT_SUCCESS;
+                        ret = 0;
+                        DEBUG_PRINTF("Success: SIM in avaliable service domain.");
+                        break;
+                    }
+                    }
+                }else
+                {
+                    info.sysinfoex.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.sysinfoex.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
+                break;
+            }
+            case STAGE_COPS:
+            {
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"+COPS:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/cops");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 2);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/cops2");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.cops.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.cops.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+
+                    if(strstr(linep, "CMCC") || strstr(linep, "CHINA MOBILE"))
+                    {
+                        info.currentOperator = STAGE_OPERATOR_MOBILE;
+                    }else if(strstr(linep, "CHN-CT"))
+                    {
+                        info.currentOperator = STAGE_OPERATOR_TELECOM;
+                    }else if(strstr(linep, "CHN-UNICOM"))
+                    {
+                        info.currentOperator = STAGE_OPERATOR_UNICOM;
+                    }else
+                    {
+                        info.cops.result = STAGE_RESULT_FAILED;
+                        info.currentOperator = STAGE_UNKNOWN;
+                        ret = -ENODATA;
+                        ERR_RECORDER(NULL);
+                        DEBUG_PRINTF("");
+                    }
+                }else
+                {
+                    info.cops.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.cops.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                    DEBUG_PRINTF("no +COPS:");
+                }
+                break;
+            }
+            case STAGE_SIMSWITCH:
+            {
+                /*'ret' which is very special at here, which is the num of channel, or -errno with errno*/
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^SIMSWITCH:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/simswitch");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.swit.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.swit.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    char* chp = getKeyLineFromBuf(linepTmp, len, linep, (char*)"1");
+                    if(chp)
+                    {//channel 1
+                        info.currentSlot = STAGE_SLOT_1;
+                    }else
+                    {//channel 0
+                        info.currentSlot = STAGE_SLOT_0;
+                    }
+                }else
+                {
+                    info.swit.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.swit.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
+                break;
+            }
+            case STAGE_CSQ:
+            {
+                //info.csq.checkCnt++;
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"+CSQ:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/csq");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/csq0");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.csq.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.csq.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    //delim = cutAskFromKeyLine(linep, 0);
+                    //if(atoi(delim) > SIM_CSQ_SIGNAL_MIN)
+                }else
+                {
+                    info.csq.result = STAGE_RESULT_UNKNOWN;
+                    ret = -ENODATA;
+                    bzero(info.csq.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                }
+                break;
+            }
+            case STAGE_CHIPTEMP:
+            {
+                //info.chiptemp.checkCnt++;
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^CHIPTEMP:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/chiptemp");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 5);
+                DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/chiptemp5");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    info.chiptemp.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.chiptemp.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    //delim = cutAskFromKeyLine(linep, 5);
+                    //if(atoi(delim) < SIM_TEMP_VALUE_MAX);
+                }else
+                {
+                    info.chiptemp.result = STAGE_RESULT_UNKNOWN;
+                    ret = -ENODATA;
+                    bzero(info.chiptemp.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                }
+                break;
+            }
+            case STAGE_NDISSTATQRY:
+            {
+                //info.qry.checkCnt++;
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^NDISSTATQRY:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/ndisstatqry");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    strncpy(info.qry.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    if(!strstr(linep, "1,,,\"IPV4\""))
+                    {
+                        info.qry.result = STAGE_RESULT_FAILED;
+                        ret = -ENODATA;
+                    }else
+                    {
+                        info.qry.result = STAGE_RESULT_SUCCESS;
+                        DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
+                        showBuf(linep, BUF_TMP_LENGTH);
+                        DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
+                    }
+                }else
+                {
+                    info.qry.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.qry.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
+                break;
+            }
+            case STAGE_CCLK:
+            {
+                //info.cclk.checkCnt++;
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"+CCLK:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                //cmd.replace("\"", " ");
+                cmd += QString(" > /tmp/lte/cclk");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    strncpy(info.cclk.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    info.cclk.result = STAGE_RESULT_SUCCESS;
+                }else
+                {
+                    info.cclk.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.cclk.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
+                break;
+            }
+            case STAGE_EONS:
+            {
+                //info.eons.checkCnt++;
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^EONS:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/eons");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, 1, ':');
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/eons1");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    strncpy(info.eons.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    info.eons.result = STAGE_RESULT_SUCCESS;
+                }else
+                {
+                    info.eons.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.eons.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
+                break;
+            }
+            case STAGE_CARDMODE:
+            {
+                //info.cardmode.checkCnt++;
+                linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^CARDMODE:");
+                DEBUG_PRINTF();
+                delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/cardmode");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(linep)
+                {
+                    strncpy(info.cardmode.meAckMsg, linep, AT_ACK_RESULT_INFO_LENGTH);
+                    info.cardmode.result = STAGE_RESULT_SUCCESS;
+                }else
+                {
+                    info.cardmode.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.cardmode.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                    ERR_RECORDER(NULL);
+                }
+                break;
+            }
+            case STAGE_CHECK_IP:
+            {
+                //info.ip.checkCnt++;
+                linep = buf;
+                DEBUG_PRINTF();
+                cmd = QString("echo ");
+                if(linep) cmd += QString(linep);
+                cmd += QString(" > /tmp/lte/ip");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                if(len > 0)
+                {
+                    info.ip.result = STAGE_RESULT_SUCCESS;
+                    strncpy(info.ip.meAckMsg, buf, AT_ACK_RESULT_INFO_LENGTH);
+                }else
+                {
+                    info.ip.result = STAGE_RESULT_UNKNOWN;
+                    bzero(info.ip.meAckMsg, AT_ACK_RESULT_INFO_LENGTH);
+                    ret = -ENODATA;
+                }
+                break;
+            }
+            case STAGE_CHECK_PING:
+            {
+                //info.ping.checkCnt++;
+
+                if(STAGE_RESULT_SUCCESS == len)
+                {
+                    info.ping.result = STAGE_RESULT_SUCCESS;
+                    strcpy(info.ping.meAckMsg, "OK");
+                }else
+                {
+                    info.ping.result = STAGE_RESULT_FAILED;
+                    ret = -ENODATA;
+                    strcpy(info.ping.meAckMsg, "Bad.");
+                }
+                linep = info.ping.meAckMsg;
+                DEBUG_PRINTF();
+                cmd = QString("echo ");
+                if(linep) cmd += QString(linep);
+                cmd += QString(" > /tmp/lte/ping");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+
+                break;
+            }
+            default:
+            {
+                ret = -ENODATA;
+                ERR_RECORDER(NULL);
+                break;
+            }
+            }
+            //display
+            emit signalDisplay(e, (NULL!=linep)?QString(linep):QString());
+        }
+        free(bufTmp);
     }
 
-    free(linepTmp);
     mutexInfo.unlock();
 
     return ret;
@@ -1310,6 +1364,8 @@ int threadDialing::slotMonitorTimerHandler()
     int ret = 0;
     enum checkStageLTE isDialedSuccess;
 
+
+    monitorTimer.stop();
     //dynamic check
     DEBUG_PRINTF("TimerCnt: %d.", prescaler);
 
@@ -1337,6 +1393,21 @@ int threadDialing::slotMonitorTimerHandler()
     {
         prescaler = 0;
         dialingCnt = 0;
+    }
+
+    if(TRY_COUNT_INFINITE_SIGN != tryCount)
+    {
+        if(--tryCount > 0)
+        {
+            monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
+        }else
+        {
+            //stop the process
+            emergency_sighandler(SIGUSR1);
+        }
+    }else
+    {
+        monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
     }
 
     return ret;
@@ -1455,10 +1526,9 @@ looper_stage_branch:
         }
         case STAGE_SIMSWITCH:
         {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 2);
             if(3 > switchCnt++)
             {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 2);
-
                 if(STAGE_MODE_REFRESH != currentMode)
                 {
                     DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
@@ -1500,6 +1570,7 @@ looper_stage_branch:
         case STAGE_CPIN:
         {
             ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", STAGE_CPIN, 2, 2);
+            //after cpin&switch check, and go to switch again if it's not good
             if(STAGE_MODE_REFRESH != currentMode)
             {
                 if(ret)
@@ -1544,8 +1615,8 @@ looper_stage_branch:
                 }
                 case STAGE_OPERATOR_TELECOM:
                 {
-                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);
-                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);
+                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);//do not need this
+                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);   //do not need this
                     if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", STAGE_PARSE_SIMPLE, 2, 2))
                     {
                         DEBUG_PRINTF("CH-T dialing end.");
@@ -1579,12 +1650,14 @@ looper_stage_branch:
         {
             ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", STAGE_NDISSTATQRY, 2, 2);
         }
-        case STAGE_GET_SPECIAL_DATA:
+        case STAGE_GET_SPECIAL_DATA_AFTER_DIAL:
         {
             //some need to known
+            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 1);
             sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", STAGE_CSQ, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT+CCLK?", STAGE_CCLK, 2, 1);
             sendCMDandCheckRecvMsg(fd, (char*)"AT^EONS=1", STAGE_EONS, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT+CCLK?", STAGE_CCLK, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT^CARDMODE", STAGE_CARDMODE, 2, 1);
             sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", STAGE_CHIPTEMP, 2, 1);
             if(1)//use iccid to refresh cnt data
             {
@@ -1602,7 +1675,6 @@ looper_stage_branch:
                 }
 #endif
             }
-
         }
         case STAGE_CHECK_PING:
         {
@@ -2057,8 +2129,7 @@ int threadDialing::getApnNodeListFromConfigFile(const char *xmlPath)
     if(!xmlPath)
     {
         ret = -EINVAL;
-        ERR_RECORDER(NULL);
-        DEBUG_PRINTF("xmlPath is empty!");
+        ERR_PRINTF("xmlPath is empty!");
     }else
     {
         ret = tryCreateDefaultXMLConfigFile(xmlPath);
@@ -2095,7 +2166,7 @@ void threadDialing::run()
 
     QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler, Qt::QueuedConnection);
 
-    monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
+    monitorTimer.start();
 
     exec();
 }

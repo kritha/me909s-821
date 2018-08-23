@@ -1,11 +1,13 @@
 #ifndef GLOBAL_H
 #define GLOBAL_H
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
+#include <signal.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.9.0"
+#define BOXV3CHECKAPP_VERSION "V0.9.1"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -30,11 +32,12 @@
 #define NET_ACCESS_LOG_FILENAME "logLTE.txt"
 #define APNNODE_XML_CONFIG_FILE "/etc/dialLTE.config"
 
-#define TIMESPEND_WHOLE_DIALING   30      //s
+#define TIMESPEND_WHOLE_DIALING   1      //s
 
-#define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
-#define MONITOR_TIMER_CHECK_INTERVAL    (1000*1) //ms
+//#define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
+#define MONITOR_TIMER_CHECK_INTERVAL    (1000*TIMESPEND_WHOLE_DIALING) //ms
 #define MONITOR_TIMER_CHECK_SPECIAL_MULT    7
+#define TRY_COUNT_INFINITE_SIGN  (-8)
 
 /*
  * Save __FILE__ ,__FUNCTION__, __LINE__, and err msg, when err occured.
@@ -50,6 +53,14 @@
     }while(0)
 
 #define DEBUG_PRINTF(fmt, args...) printf("---debug---%s(line:%d)"fmt"\n", __func__, __LINE__, ##args)
+
+#define ERR_PRINTF(fmt, args...) do{ \
+    bzero(&errInfo, sizeof(errInfo_t));\
+    errInfo.filep = (char*)__FILE__;\
+    errInfo.funcp = (char*)__func__;\
+    errInfo.line = __LINE__;\
+    printf("_Error_: %s(line:%d)"fmt"\n", __func__, __LINE__, ##args);\
+}while(0)
 
 typedef struct _errInfo{
     char* filep;
@@ -81,7 +92,8 @@ enum checkStageLTE{
     STAGE_NDISSTATQRY,
     STAGE_CCLK,
     STAGE_EONS,
-    STAGE_GET_SPECIAL_DATA,
+    STAGE_CARDMODE,
+    STAGE_GET_SPECIAL_DATA_AFTER_DIAL,
     STAGE_CHECK_IP,
     STAGE_CHECK_PING,
 
@@ -90,6 +102,8 @@ enum checkStageLTE{
     STAGE_RESULT_UNKNOWN,
 
     STAGE_PARSE_SIMPLE,
+    STAGE_PARSE_SPECIAL_SIMST,
+    STAGE_PARSE_SPECIAL_CME_ERROR,
     STAGE_PARSE_OFF,
 
     STAGE_OPERATOR_MOBILE,
@@ -112,7 +126,7 @@ enum checkStageLTE{
 };
 
 typedef struct _dialingBaseMsg{
-    char checkCnt;
+    //char checkCnt;
     enum checkStageLTE result;
     char meAckMsg[AT_ACK_RESULT_INFO_LENGTH];
 }dialingBaseMsg_t;
@@ -143,6 +157,7 @@ typedef struct _dialingInfo{
     dialingBaseMsg_t qry;
     dialingBaseMsg_t cclk;
     dialingBaseMsg_t eons;
+    dialingBaseMsg_t cardmode;
     dialingBaseMsg_t sleepcfg;
 
 
@@ -182,6 +197,16 @@ typedef struct _apnNodeInfo{
 }apnNodeInfo_t;
 
 extern errInfo_t errInfo;
+extern int tryCount;
+
+#ifdef __cplusplus
+extern "C"{
+#endif
+
+extern void emergency_sighandler(int signum);
+#ifdef __cplusplus
+}
+#endif
 
 #endif // GLOBAL_H
 

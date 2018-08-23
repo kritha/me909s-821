@@ -53,7 +53,7 @@ public:
     int parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t &info, char *buf, int len, checkStageLTE e);
     int recvMsgFromATModuleAndParsed(int fd, checkStageLTE key, int nsec);
 
-    char *getKeyLineFromBuf(char *buf, char *key);
+    char *getKeyLineFromBuf(char *dst, int len, char *buf, char *key);
     char *cutAskFromKeyLine(char* keyLine, int keyLineLen, const char *srcLine, int argIndex, const char firstToken = ' ');
     int checkIP(char emergencyFlag);
     int checkInternetAccess(char emergencyFlag = 0);

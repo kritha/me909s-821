@@ -8,13 +8,13 @@
 
 static QString cmdLineParser(QCoreApplication& a)
 {
-//#define USE_OPTARGS
+#define USE_OPTARGS
     QString value;
     QCoreApplication::setApplicationVersion(BOXV3CHECKAPP_VERSION);
 #ifdef USE_OPTARGS
-    QCommandLineOption optArgs("f");
-    optArgs.setDescription("force option(like RD_ONLY for read devicenode only.)");
-    optArgs.setValueName("ForceOptions");
+    QCommandLineOption optArgs("t");
+    optArgs.setDescription("try count if dialed failed, default is infinite.");
+    optArgs.setValueName("tryCount");
 #endif
     QCommandLineParser parser;
     parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsLongOptions);
@@ -27,6 +27,14 @@ static QString cmdLineParser(QCoreApplication& a)
 
 #ifdef USE_OPTARGS
     value = parser.value(optArgs);
+    if(!value.isEmpty() || !value.isNull())
+    {
+        tryCount = value.toInt();
+    }else
+    {
+        tryCount = TRY_COUNT_INFINITE_SIGN;
+    }
+    DEBUG_PRINTF("tryCount:%d.", tryCount);
 #endif
 
     return value.contains("RD_ONLY") ? value:QString();
@@ -34,6 +42,10 @@ static QString cmdLineParser(QCoreApplication& a)
 
 int main(int argc, char *argv[])
 {
+    int ret = 0;
+    int fd = -1;
+    char nodePath[128] = {};
+
     QApplication a(argc, argv);
 
     MainWindow w;
@@ -42,9 +54,10 @@ int main(int argc, char *argv[])
     //display
     QObject::connect(&dialing, &threadDialing::signalDisplay, &w, &MainWindow::slotDisplay, Qt::QueuedConnection);
 
-    int ret = 0;
-    int fd = -1;
-    char nodePath[128] = {};
+
+    signal(SIGINT, emergency_sighandler);
+    signal(SIGKILL, emergency_sighandler);
+    signal(SIGQUIT, emergency_sighandler);
 
     cmdLineParser(a);
 

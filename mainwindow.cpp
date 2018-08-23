@@ -44,6 +44,9 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->checkBox_currentMode->setCheckState(checkState);
     ui->checkBox_cclk->setCheckState(checkState);
     ui->checkBox_eons->setCheckState(checkState);
+    ui->checkBox_cardmode->setCheckState(checkState);
+    ui->checkBox_simst->setCheckState(checkState);
+    ui->checkBox_cme_error->setCheckState(checkState);
 
     ui->lineEdit_deviceNode->setText(NULL);
     ui->lineEdit_LTEmodule->setText(NULL);
@@ -60,6 +63,9 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->lineEdit_currentMode->setText(NULL);
     ui->lineEdit_cclk->setText(NULL);
     ui->lineEdit_eons->setText(NULL);
+    ui->lineEdit_cardmode->setText(NULL);
+    ui->lineEdit_simst->setText(NULL);
+    ui->lineEdit_cme_error->setText(NULL);
     ui->lineEdit_successCnt->setText(QString("0"));
     ui->lineEdit_failedCnt->setText(QString("0"));
 }
@@ -77,6 +83,18 @@ void MainWindow::slotDisplay(char stage, QString result)
 
     switch(stage)
     {
+    case STAGE_PARSE_SPECIAL_SIMST:
+    {
+        ui->checkBox_simst->setCheckState(checkState);
+        ui->lineEdit_simst->setText(result);
+        break;
+    }
+    case STAGE_PARSE_SPECIAL_CME_ERROR:
+    {
+        ui->checkBox_cme_error->setCheckState(checkState);
+        ui->lineEdit_cme_error->setText(result);
+        break;
+    }
     case STAGE_RESET:
     {
         DEBUG_PRINTF();
@@ -121,6 +139,12 @@ void MainWindow::slotDisplay(char stage, QString result)
 
         ui->checkBox_eons->setCheckState(checkState);
         ui->lineEdit_eons->setText(result);
+        break;
+    }
+    case STAGE_CARDMODE:
+    {
+        ui->checkBox_cardmode->setCheckState(checkState);
+        ui->lineEdit_cardmode->setText(result);
         break;
     }
     case STAGE_SIMSWITCH:
