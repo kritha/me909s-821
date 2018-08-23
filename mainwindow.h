@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QTimer>
 #include <QDateTime>
+#include <QFont>
 #include "global.h"
 
 namespace Ui {

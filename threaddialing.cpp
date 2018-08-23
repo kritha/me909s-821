@@ -249,24 +249,30 @@ void threadDialing::exitSerialPortFromTtyLte(int* fd)
 
 void threadDialing::createOutputFile()
 {
-    system("rm -rf /tmp/4G");
-    system("mkdir -p /tmp/4G");
-    system("touch /tmp/4G/devicenode");
-    system("touch /tmp/4G/module");
-    system("touch /tmp/4G/simswitch");
-    system("touch /tmp/4G/cpin");
-    system("touch /tmp/4G/sysinfoex");
-    system("touch /tmp/4G/sysinfoex0");
-    system("touch /tmp/4G/sysinfoex1");
-    system("touch /tmp/4G/cops");
-    system("touch /tmp/4G/ndisstatqry");
-    system("touch /tmp/4G/csq");
-    system("touch /tmp/4G/chiptemp");
-    system("touch /tmp/4G/iccid");
-    system("touch /tmp/4G/cclk");
-    system("touch /tmp/4G/eons");
-    system("touch /tmp/4G/ip");
-    system("touch /tmp/4G/ping");
+    //rm everything , but the log file
+    system("rm -rf `ls -l /tmp/lte/ | egrep -v *.txt`");
+
+    system("mkdir -p /tmp/lte");
+    system("touch /tmp/lte/devicenode");
+    system("touch /tmp/lte/module");
+    system("touch /tmp/lte/simswitch");
+    system("touch /tmp/lte/cpin");
+    system("touch /tmp/lte/sysinfoex");
+    system("touch /tmp/lte/sysinfoex0");
+    system("touch /tmp/lte/sysinfoex1");
+    system("touch /tmp/lte/cops");
+    system("touch /tmp/lte/cops2");
+    system("touch /tmp/lte/ndisstatqry");
+    system("touch /tmp/lte/csq");
+    system("touch /tmp/lte/csq0");
+    system("touch /tmp/lte/chiptemp");
+    system("touch /tmp/lte/chiptemp5");
+    system("touch /tmp/lte/iccid");
+    system("touch /tmp/lte/cclk");
+    system("touch /tmp/lte/eons");
+    system("touch /tmp/lte/eons1");
+    system("touch /tmp/lte/ip");
+    system("touch /tmp/lte/ping");
     DEBUG_PRINTF("Create output file done.");
 }
 
@@ -600,7 +606,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF();
             cmd = QString("echo ");
             if(linep) cmd += QString(linep);
-            cmd += QString(" > /tmp/4G/module");
+            cmd += QString(" > /tmp/lte/module");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -623,7 +629,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF();
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/iccid");
+            cmd += QString(" > /tmp/lte/iccid");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -646,7 +652,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF();
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/cpin");
+            cmd += QString(" > /tmp/lte/cpin");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -677,19 +683,19 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF();
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/sysinfoex");
+            cmd += QString(" > /tmp/lte/sysinfoex");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/sysinfoex0");
+            cmd += QString(" > /tmp/lte/sysinfoex0");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             delim = cutAskFromKeyLine(linepTmp, len, linep, 1);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/sysinfoex1");
+            cmd += QString(" > /tmp/lte/sysinfoex1");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             DEBUG_PRINTF("]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]");
@@ -734,7 +740,14 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/cops");
+            cmd += QString(" > /tmp/lte/cops");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 2);
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/lte/cops2");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -778,7 +791,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/simswitch");
+            cmd += QString(" > /tmp/lte/simswitch");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -810,14 +823,14 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/csq");
+            cmd += QString(" > /tmp/lte/csq");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             DEBUG_PRINTF();
             delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/csq0");
+            cmd += QString(" > /tmp/lte/csq0");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -842,7 +855,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/chiptemp");
+            cmd += QString(" > /tmp/lte/chiptemp");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
@@ -850,7 +863,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF("())))))))))))))))))))))))))))))))((((((((((((((((((((((((((((((((");
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/chiptemp0");
+            cmd += QString(" > /tmp/lte/chiptemp5");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -875,7 +888,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             delim = cutAskFromKeyLine(linepTmp, len, linep, 0);
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/4G/ndisstatqry");
+            cmd += QString(" > /tmp/lte/ndisstatqry");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -910,7 +923,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
             //cmd.replace("\"", " ");
-            cmd += QString(" > /tmp/4G/cclk");
+            cmd += QString(" > /tmp/lte/cclk");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -934,8 +947,14 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
             cmd = QString("echo ");
             if(delim) cmd += QString(delim);
-            //cmd.replace("\"", " ");
-            cmd += QString(" > /tmp/4G/eons");
+            cmd += QString(" > /tmp/lte/eons");
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+            DEBUG_PRINTF();
+            delim = cutAskFromKeyLine(linepTmp, len, linep, 1, ':');
+            cmd = QString("echo ");
+            if(delim) cmd += QString(delim);
+            cmd += QString(" > /tmp/lte/eons1");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(linep)
@@ -958,7 +977,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF();
             cmd = QString("echo ");
             if(linep) cmd += QString(linep);
-            cmd += QString(" > /tmp/4G/ip");
+            cmd += QString(" > /tmp/lte/ip");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
             if(len > 0)
@@ -991,7 +1010,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             DEBUG_PRINTF();
             cmd = QString("echo ");
             if(linep) cmd += QString(linep);
-            cmd += QString(" > /tmp/4G/ping");
+            cmd += QString(" > /tmp/lte/ping");
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
 
@@ -1403,7 +1422,7 @@ looper_stage_branch:
             ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
             if(ret)
             {
-                system("echo 'nodeviceNode' > /tmp/4G/devicenode");
+                system("echo 'nodeviceNode' > /tmp/lte/devicenode");
                 emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
                 currentStage = STAGE_RESULT_FAILED;
                 goto looper_stage_branch;
@@ -1411,7 +1430,7 @@ looper_stage_branch:
             {
                 QString cmd("echo ");
                 if(nodePath) cmd += QString(nodePath);
-                cmd += QString(" > /tmp/4G/devicenode");
+                cmd += QString(" > /tmp/lte/devicenode");
                 system(cmd.toLocal8Bit().data());
                 DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
                 emit signalDisplay(STAGE_NODE, QString(nodePath));
@@ -1572,6 +1591,7 @@ looper_stage_branch:
                 if(strlen(dialingInfo.iccid.meAckMsg) > 0)
                     strcpy(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg);
                 sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", STAGE_ICCID, 2, 1);
+#if 0
                 if((0 != strcmp(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg)))
                 {
                     DEBUG_PRINTF("Warning: new SIM card insert in the slot with a new iccid.");
@@ -1580,6 +1600,7 @@ looper_stage_branch:
                     emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(successCnt));
                     emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(failedCnt));
                 }
+#endif
             }
 
         }

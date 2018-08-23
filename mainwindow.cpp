@@ -42,6 +42,8 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->checkBox_temp->setCheckState(checkState);
     ui->checkBox_iccid->setCheckState(checkState);
     ui->checkBox_currentMode->setCheckState(checkState);
+    ui->checkBox_cclk->setCheckState(checkState);
+    ui->checkBox_eons->setCheckState(checkState);
 
     ui->lineEdit_deviceNode->setText(NULL);
     ui->lineEdit_LTEmodule->setText(NULL);
@@ -56,6 +58,8 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->lineEdit_temp->setText(NULL);
     ui->lineEdit_iccid->setText(NULL);
     ui->lineEdit_currentMode->setText(NULL);
+    ui->lineEdit_cclk->setText(NULL);
+    ui->lineEdit_eons->setText(NULL);
     ui->lineEdit_successCnt->setText(QString("0"));
     ui->lineEdit_failedCnt->setText(QString("0"));
 }
@@ -101,6 +105,22 @@ void MainWindow::slotDisplay(char stage, QString result)
     {
         ui->checkBox_iccid->setCheckState(checkState);
         ui->lineEdit_iccid->setText(result);
+        break;
+    }
+    case STAGE_CCLK:
+    {
+        ui->checkBox_cclk->setCheckState(checkState);
+        ui->lineEdit_cclk->setText(result);
+        break;
+    }
+    case STAGE_EONS:
+    {
+        QFont qft;
+        qft.setPointSize(7);
+        ui->lineEdit_eons->setFont(qft);
+
+        ui->checkBox_eons->setCheckState(checkState);
+        ui->lineEdit_eons->setText(result);
         break;
     }
     case STAGE_SIMSWITCH:
