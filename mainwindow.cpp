@@ -66,8 +66,11 @@ void MainWindow::slotDisplayInit(bool defFlag)
     ui->lineEdit_cardmode->setText(NULL);
     ui->lineEdit_simst->setText(NULL);
     ui->lineEdit_cme_error->setText(NULL);
-    ui->lineEdit_successCnt->setText(QString("0"));
-    ui->lineEdit_failedCnt->setText(QString("0"));
+    if(!defFlag)
+    {
+        ui->lineEdit_successCnt->setText(QString("0"));
+        ui->lineEdit_failedCnt->setText(QString("0"));
+    }
 }
 
 void MainWindow::slotDisplay(char stage, QString result)
@@ -205,7 +208,7 @@ void MainWindow::slotDisplay(char stage, QString result)
     case STAGE_DISPLAY_INIT:
     {
         DEBUG_PRINTF();
-        //slotDisplayInit(false);
+        slotDisplayInit(true);
         break;
     }
     case STAGE_DISPLAY_NOTES:

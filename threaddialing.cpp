@@ -11,7 +11,10 @@ threadDialing::threadDialing()
     bzero(&dialingInfo_tmp, sizeof(dialingInfo_t));
     apnNodeList = NULL;
 
-    createOutputFile();
+    //create log file in the log dir
+    createLogFile(GLOBAL_LOG_FILEPATH);
+    //create tmp filesystem files
+    initOutputFiles();
 
     if(0 != getApnNodeListFromConfigFile())
     {
@@ -247,10 +250,11 @@ void threadDialing::exitSerialPortFromTtyLte(int* fd)
     }
 }
 
-void threadDialing::createOutputFile()
+void threadDialing::initOutputFiles()
 {
     //rm everything , but the log file
-    system("rm -rf `ls -l /tmp/lte/ | egrep -v *.txt`");
+    //system("rm -rf `ls /tmp/lte |egrep -v *.txt`");
+    system("rm -rf /tmp/lte");
 
     system("mkdir -p /tmp/lte");
     system("touch /tmp/lte/devicenode");
@@ -274,7 +278,21 @@ void threadDialing::createOutputFile()
     system("touch /tmp/lte/cardmode");
     system("touch /tmp/lte/ip");
     system("touch /tmp/lte/ping");
+    system("touch /tmp/lte/cme_error");
+    system("touch /tmp/lte/simst_unreal");
     DEBUG_PRINTF("Create output file done.");
+}
+
+//when dial succeed
+void threadDialing::clearSimStatesOfOutputFiles(char simSt)
+{
+    system("rm -rf /tmp/lte/cme_error");
+    system("touch /tmp/lte/cme_error");
+    if(simSt)
+    {
+        system("rm -rf /tmp/lte/simst_unreal");
+        system("touch /tmp/lte/simst_unreal");
+    }
 }
 
 
@@ -583,7 +601,7 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
         {
             if((STAGE_CHECK_IP != e) && (STAGE_CHECK_PING != e))
             {
-            //buf, must end with a '\0'
+                //buf, must end with a '\0'
                 buf[len-1] = '\0';
             }
 
@@ -593,28 +611,38 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
             linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"^SIMST:");
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1);
             DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/simst_unreal");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-            emit signalDisplay(STAGE_PARSE_SPECIAL_SIMST, (NULL!=linep)?QString(linep):QString());
+            if(delim)
+            {
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/simst_unreal");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                emit signalDisplay(STAGE_PARSE_SPECIAL_SIMST, (NULL!=linep)?QString(linep):QString());
+            }
 
             //1 CME ERROR
             linep = getKeyLineFromBuf(bufTmp, len, buf, (char*)"+CME ERROR:");
             delim = cutAskFromKeyLine(linepTmp, len, linep, -1, ':');
             DEBUG_PRINTF();
-            cmd = QString("echo ");
-            if(delim) cmd += QString(delim);
-            cmd += QString(" > /tmp/lte/cme_error");
-            system(cmd.toLocal8Bit().data());
-            DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-
-            emit signalDisplay(STAGE_PARSE_SPECIAL_CME_ERROR, (NULL!=linep)?QString(linep):QString());
+            if(delim)
+            {
+                cmd = QString("echo ");
+                if(delim) cmd += QString(delim);
+                cmd += QString(" > /tmp/lte/cme_error");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                emit signalDisplay(STAGE_PARSE_SPECIAL_CME_ERROR, (NULL!=linep)?QString(linep):QString());
+            }
             /*parse special end*/
 
             switch(e)
             {
+            case STAGE_PARSE_OFF:
+            {
+                DEBUG_PRINTF("common parse off");
+                break;
+            }
             case STAGE_PARSE_SIMPLE:
             {
                 if(!strstr(buf, "OK"))
@@ -931,6 +959,10 @@ int threadDialing::parseATcmdACKbyLineOrSpecialCmd(dialingInfo_t& info, char* bu
                         ret = -ENODATA;
                     }else
                     {
+                        emit signalDisplay(STAGE_PARSE_SPECIAL_CME_ERROR, QString());
+                        emit signalDisplay(STAGE_PARSE_SPECIAL_SIMST, QString());
+                        clearSimStatesOfOutputFiles(1);
+
                         info.qry.result = STAGE_RESULT_SUCCESS;
                         DEBUG_PRINTF("###PARSEACK_NDISSTATQRY###");
                         showBuf(linep, BUF_TMP_LENGTH);
@@ -1144,18 +1176,12 @@ int threadDialing::recvMsgFromATModuleAndParsed(int fd, checkStageLTE key, int n
                 }
                 showBuf(buf, BUF_TMP_LENGTH);
                 //analyse read date if have key and if we wanna parse it
-                if(STAGE_PARSE_OFF != key)
-                {
-                    ret = parseATcmdACKbyLineOrSpecialCmd(dialingInfo, buf, BUF_TMP_LENGTH, key);
-                    DEBUG_PRINTF("parse(key:%d, ret:%d).", key, ret);
-                    if(!ret)
-                        break;
-                    else
-                        ret = -ENODATA;
-                }else
-                {
-                    DEBUG_PRINTF("key is NOTPARSEACK.");
-                }
+                ret = parseATcmdACKbyLineOrSpecialCmd(dialingInfo, buf, BUF_TMP_LENGTH, key);
+                DEBUG_PRINTF("parse(key:%d, ret:%d).", key, ret);
+                if(!ret)
+                    break;
+                else
+                    ret = -ENODATA;
             }else
             {
                 ret = -EINVAL;
@@ -1357,407 +1383,6 @@ void threadDialing::showDialingResult(dialingInfo_t &info)
     DEBUG_PRINTF("#######################show end#######################");
 }
 
-
-int threadDialing::slotMonitorTimerHandler()
-{
-    static int prescaler = 0, dialingCnt = 0;
-    int ret = 0;
-    enum checkStageLTE isDialedSuccess;
-
-
-    monitorTimer.stop();
-    //dynamic check
-    DEBUG_PRINTF("TimerCnt: %d.", prescaler);
-
-    if((0 == prescaler)||(prescaler/MONITOR_TIMER_CHECK_SPECIAL_MULT))
-    {
-        mutexInfo.lock();
-        isDialedSuccess = dialingInfo.isDialedSuccess;
-        mutexInfo.unlock();
-
-        DEBUG_PRINTF("DialingCnt: %d", ++dialingCnt);
-
-        if(STAGE_RESULT_SUCCESS != isDialedSuccess)
-        {
-            slotRunDialing(STAGE_DEFAULT);
-        }else
-        {
-            slotRunDialing(STAGE_MODE_REFRESH);
-        }
-    }
-
-
-    if(prescaler++ > 10000)
-    {
-        prescaler = 0;
-        dialingCnt = 0;
-    }
-
-    DEBUG_PRINTF("tryCount:%d", tryCount);
-    if(TRY_COUNT_INFINITE_SIGN != tryCount)
-    {
-        if(--tryCount > 0)
-        {
-            monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
-        }else
-        {
-            //stop the process
-            emergency_sighandler(SIGUSR1);
-        }
-    }else
-    {
-        monitorTimer.start(MONITOR_TIMER_CHECK_INTERVAL);
-    }
-
-    return ret;
-}
-
-int threadDialing::slotRunDialing(enum checkStageLTE currentStage)
-{
-    int ret = 0, switchCnt = 0, resetCnt = 0;
-    static int successCnt = 0, failedCnt = 0;
-    QString notes;
-    //volatile enum checkStageLTE currentStage;
-    enum checkStageLTE currentMode = STAGE_MODE_DIAL;
-
-    //just one slot could be triggered at one time
-    if(mutexDial.tryLock())
-    {
-        //currentStage = beginStage;
-
-        if(currentStage > STAGE_NODE)
-        {
-            DEBUG_PRINTF("Warning: Invalid STAGE, change stage to STAGE_NODE(%d).", STAGE_NODE);
-            currentStage = STAGE_NODE;
-        }
-looper_stage_branch:
-        DEBUG_PRINTF("currentStage: %d.", currentStage);
-        /*begin dialing*/
-        switch(currentStage)
-        {
-        case STAGE_RESET:
-        {
-            if(1 > resetCnt++)
-            {
-                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", STAGE_RESET, 2, 2);
-                DEBUG_PRINTF("wait reset for more than 10s...");
-                sleep(10);
-                //call back or kill itself and restart by sysinit:respawn service
-                DEBUG_PRINTF("reset done. Start check MT again.");
-            }else
-            {
-                currentStage = STAGE_RESULT_FAILED;
-                goto looper_stage_branch;
-            }
-        }
-        case STAGE_MODE_REFRESH:
-        {
-            currentMode = STAGE_MODE_REFRESH;
-        }
-        case STAGE_DEFAULT:
-        {
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                notes = "Dialing start: ";
-                emit signalDisplay(STAGE_DEFAULT, QString("Dialing..."));
-            }else
-            {
-                notes = "Refresh env start: ";
-                emit signalDisplay(STAGE_DEFAULT, QString("Refresh..."));
-            }
-            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
-            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
-            //check for the internet access before dialing
-            ret = checkInternetAccess(1);
-            if(!ret)
-            {
-                DEBUG_PRINTF("Net access is ok formerly.");
-                emit signalDisplay(STAGE_DISPLAY_NOTES, QString("Net access is ok formerly."));
-                if(STAGE_MODE_REFRESH != currentMode)
-                {
-                    currentStage = STAGE_RESULT_SUCCESS;
-                    goto looper_stage_branch;
-                }
-            }
-        }
-        case STAGE_INITENV:
-        {
-            //init env
-            bzero(&dialingInfo, sizeof(dialingInfo_t));
-            //emit signalDisplay(STAGE_DISPLAY_INIT, QString());
-        }
-        case STAGE_NODE:
-        {
-            //0. get nodePath and access permission
-            ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
-            if(ret)
-            {
-                system("echo 'nodeviceNode' > /tmp/lte/devicenode");
-                emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
-                currentStage = STAGE_RESULT_FAILED;
-                goto looper_stage_branch;
-            }else
-            {
-                QString cmd("echo ");
-                if(nodePath) cmd += QString(nodePath);
-                cmd += QString(" > /tmp/lte/devicenode");
-                system(cmd.toLocal8Bit().data());
-                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
-                emit signalDisplay(STAGE_NODE, QString(nodePath));
-            }
-        }
-        case STAGE_AT:
-        {
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT", STAGE_AT, 2, 2);
-
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                if(ret)
-                {
-                    currentStage = STAGE_RESULT_FAILED;
-                    goto looper_stage_branch;
-                }else
-                {
-                    currentStage = STAGE_CPIN;
-                    goto looper_stage_branch;
-                }
-            }
-        }
-        case STAGE_SIMSWITCH:
-        {
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 2);
-            if(3 > switchCnt++)
-            {
-                if(STAGE_MODE_REFRESH != currentMode)
-                {
-                    DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
-                    DEBUG_PRINTF("currentSlot:%d.", dialingInfo.currentSlot);
-                    switch(dialingInfo.currentSlot)
-                    {
-                    case STAGE_SLOT_0:
-                    {
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", STAGE_SIMSWITCH, 2, 2);
-                        sleep(4);
-                        break;
-                    }
-                    case STAGE_SLOT_1:
-                    {
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", STAGE_SIMSWITCH, 2, 2);
-                        sleep(4);
-                        break;
-                    }
-                    default:
-                    {
-                        DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
-                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", STAGE_SIMSWITCH, 2, 2);
-                        sleep(4);
-                        break;
-                    }
-                    }
-                }
-            }else
-            {
-                DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
-                /*
-                * switch doesn't work that have to reset the MT
-                * if MT hasn't been reset
-                */
-                currentStage = STAGE_RESET;
-                goto looper_stage_branch;
-            }
-        }
-        case STAGE_CPIN:
-        {
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", STAGE_CPIN, 2, 2);
-            //after cpin&switch check, and go to switch again if it's not good
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                if(ret)
-                {
-                    currentStage = STAGE_SIMSWITCH;
-                    goto looper_stage_branch;
-                }
-            }
-        }
-        case STAGE_SYSINFOEX:
-        {
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SYSINFOEX", STAGE_SYSINFOEX, 2, 1);
-
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                if(ret)
-                {
-                    currentStage = STAGE_RESULT_FAILED;
-                    goto looper_stage_branch;
-                }
-            }
-        }
-        case STAGE_COPS:
-        {
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", STAGE_COPS, 2, 2);
-
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                DEBUG_PRINTF("currentOperator:%d.", dialingInfo.currentOperator);
-                switch(dialingInfo.currentOperator)
-                {
-                case STAGE_OPERATOR_MOBILE:
-                {
-                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", STAGE_PARSE_SIMPLE, 2, 2))
-                    {
-                        DEBUG_PRINTF("CMCC dialing end.");
-                    }else
-                    {
-                        DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
-                    }
-                    break;
-                }
-                case STAGE_OPERATOR_TELECOM:
-                {
-                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);//do not need this
-                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);   //do not need this
-                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", STAGE_PARSE_SIMPLE, 2, 2))
-                    {
-                        DEBUG_PRINTF("CH-T dialing end.");
-                    }else
-                    {
-                        DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
-                    }
-                    break;
-                }
-                case STAGE_OPERATOR_UNICOM:
-                {
-                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", STAGE_PARSE_SIMPLE, 2, 2))
-                    {
-                        DEBUG_PRINTF("CH-U dialing end.");
-                    }else
-                    {
-                        DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
-                    }
-                    break;
-                }
-                default:
-                {
-                    DEBUG_PRINTF("Didn't dialing at all.");
-                    ERR_RECORDER(NULL);
-                    break;
-                }
-                }
-            }
-        }
-        case STAGE_NDISSTATQRY:
-        {
-            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", STAGE_NDISSTATQRY, 2, 2);
-        }
-        case STAGE_GET_SPECIAL_DATA_AFTER_DIAL:
-        {
-            //some need to known
-            sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", STAGE_CSQ, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT^EONS=1", STAGE_EONS, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT+CCLK?", STAGE_CCLK, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT^CARDMODE", STAGE_CARDMODE, 2, 1);
-            sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", STAGE_CHIPTEMP, 2, 1);
-            if(1)//use iccid to refresh cnt data
-            {
-                if(strlen(dialingInfo.iccid.meAckMsg) > 0)
-                    strcpy(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg);
-                sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", STAGE_ICCID, 2, 1);
-#if 0
-                if((0 != strcmp(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg)))
-                {
-                    DEBUG_PRINTF("Warning: new SIM card insert in the slot with a new iccid.");
-                    successCnt = 0;
-                    failedCnt = 0;
-                    emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(successCnt));
-                    emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(failedCnt));
-                }
-#endif
-            }
-        }
-        case STAGE_CHECK_PING:
-        {
-            ret = checkInternetAccess(1);
-        }
-        case STAGE_CHECK_IP:
-        {
-            if(ret)
-            {
-                ret = checkIP(1);
-            }else
-            {
-                ret = checkIP(0);
-            }
-
-            if(ret)
-            {
-                currentStage = STAGE_RESULT_FAILED;
-            }else
-            {
-                currentStage = STAGE_RESULT_SUCCESS;
-            }
-            goto looper_stage_branch;
-        }
-        case STAGE_RESULT_SUCCESS:
-        {
-            mutexInfo.lock();
-            dialingInfo.isDialedSuccess = STAGE_RESULT_SUCCESS;
-            successCnt++;
-            mutexInfo.unlock();
-
-            emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(successCnt));
-
-            notes = QString::number(successCnt);
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                notes += "Dialed end(success): ";
-            }else
-            {
-                notes += "Refresh env end(success): ";
-            }
-            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
-            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
-            break;
-        }
-        case STAGE_RESULT_FAILED:
-        {
-            mutexInfo.lock();
-            dialingInfo.isDialedSuccess = STAGE_RESULT_FAILED;
-            failedCnt++;
-            mutexInfo.unlock();
-            emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(failedCnt));
-
-            notes = QString::number(failedCnt);
-            if(STAGE_MODE_REFRESH != currentMode)
-            {
-                notes += "Dialed end(failed): ";
-            }else
-            {
-                notes += "Refresh env end(failed): ";
-            }
-            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
-            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
-            break;
-        }
-        default:
-        {
-            DEBUG_PRINTF("UNKNOWN STAGE.");
-            emit signalDisplay(STAGE_DISPLAY_NOTES, QString("UNKNOWN STAGE."));
-            break;
-        }
-        }
-        exitSerialPortFromTtyLte(&fd);
-        /*end dialing*/
-        mutexDial.unlock();
-    }else
-    {
-        DEBUG_PRINTF("Warning: wouldn't exec! It isRunning formerly...");
-    }
-
-    return ret;
-}
-
-
 int threadDialing::createLogFile(QString dirFullPath)
 {
     int ret = 0;
@@ -1779,7 +1404,7 @@ int threadDialing::createLogFile(QString dirFullPath)
         system(cmd.toLocal8Bit().data());
         //create log file
         dirFullPath += "/";
-        dirFullPath += NET_ACCESS_LOG_FILENAME;
+        dirFullPath += GLOBAL_LOG_FILENAME;
         cmd = QString("touch ");
         cmd += dirFullPath;
         ret = system(cmd.toLocal8Bit().data());
@@ -1794,7 +1419,7 @@ int threadDialing::createLogFile(QString dirFullPath)
     return ret;
 }
 
-int threadDialing::writeLogLTE(checkStageLTE c)
+int threadDialing::writeLogLTE(checkStageLTE c, QString logStr)
 {
     int ret = 0;
     QString cmd;
@@ -1808,13 +1433,13 @@ int threadDialing::writeLogLTE(checkStageLTE c)
         {
             //-e 表示开启转义, "\c"表示不换行
             //cmd = QString("echo -e ");
-            cmd = QString("echo ");
+            cmd = QString("echo \"");
             cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
             //cmd += QString("(connected) \"\\c\" >> ");
-            cmd += QString(" connected >> ");
-            cmd += QString(NET_ACCESS_LOG_DIR);
+            cmd += QString(" connected\" >> ");
+            cmd += QString(GLOBAL_LOG_FILEPATH);
             cmd += QString("/");
-            cmd += QString(NET_ACCESS_LOG_FILENAME);
+            cmd += QString(GLOBAL_LOG_FILENAME);
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("---cmd: %s", cmd.toLocal8Bit().data());
 
@@ -1831,12 +1456,12 @@ int threadDialing::writeLogLTE(checkStageLTE c)
     {
         if(STAGE_RESULT_FAILED != lastTimeStatus)
         {
-            cmd = QString("echo ");
+            cmd = QString("echo \"");
             cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
-            cmd += QString(" disconnected >> ");
-            cmd += QString(NET_ACCESS_LOG_DIR);
+            cmd += QString(" disconnected\" >> ");
+            cmd += QString(GLOBAL_LOG_FILEPATH);
             cmd += QString("/");
-            cmd += QString(NET_ACCESS_LOG_FILENAME);
+            cmd += QString(GLOBAL_LOG_FILENAME);
             system(cmd.toLocal8Bit().data());
             DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
 
@@ -1849,8 +1474,25 @@ int threadDialing::writeLogLTE(checkStageLTE c)
             break;
         }
     }
+    case STAGE_LOG_COMMON:
+    {
+        if(!logStr.isEmpty())
+        {
+            cmd = QString("echo \"[");
+            cmd += QDateTime::currentDateTime().toString("yyyyMMdd-hh:mm:ss");
+            cmd += "] ";
+            cmd += logStr;
+            cmd += QString("\" >> ");
+            cmd += QString(GLOBAL_LOG_FILEPATH);
+            cmd += QString("/");
+            cmd += QString(GLOBAL_LOG_FILENAME);
+            system(cmd.toLocal8Bit().data());
+            DEBUG_PRINTF("%s", cmd.toLocal8Bit().data());
+        }
+    }
     default:
     {
+        DEBUG_PRINTF();
         break;
     }
     }
@@ -1968,6 +1610,424 @@ int threadDialing::queryWholeXMLConfigFile(const char *xmlPath)
             DEBUG_PRINTF("Error: xml file is empty.");
         }
     }
+    return ret;
+}
+
+int threadDialing::slotMonitorTimerHandler()
+{
+    int ret = 0;
+
+    monitorTimer.stop();
+    //dynamic check
+    DEBUG_PRINTF("isDialedSuccess: %d.", dialingInfo.isDialedSuccess);
+
+    gData.monitorCnt++;
+    DEBUG_PRINTF("monitorCnt:%d", gData.monitorCnt);
+
+    if(STAGE_RESULT_SUCCESS != dialingInfo.isDialedSuccess)
+    {
+        slotRunDialing(STAGE_INITENV);
+    }else
+    {
+        slotRunDialing(STAGE_MODE_REFRESH);
+    }
+
+    DEBUG_PRINTF("tryCount:%d", gData.tryCount);
+    if(TRY_COUNT_INFINITE_SIGN != gData.tryCount)
+    {
+        if(--gData.tryCount > 0)
+        {
+            (STAGE_RESULT_SUCCESS != dialingInfo.isDialedSuccess)?\
+                        monitorTimer.start(MONITOR_INTERVEL(REFRESH_INTERVEL)):\
+                        monitorTimer.start();
+        }else
+        {
+            //stop the process
+            QCoreApplication::processEvents();
+            sleep(1);
+            emergency_sighandler(SIGUSR1);
+        }
+    }else
+    {
+        (STAGE_RESULT_SUCCESS != dialingInfo.isDialedSuccess)?\
+                    monitorTimer.start(MONITOR_INTERVEL(REFRESH_INTERVEL)):\
+                    monitorTimer.start();
+    }
+
+    return ret;
+}
+
+int threadDialing::slotRunDialing(enum checkStageLTE currentStage)
+{
+    int ret = 0, switchCnt = 0, resetCnt = 0;
+    QString notes;
+    //volatile enum checkStageLTE currentStage;
+    enum checkStageLTE currentMode = STAGE_MODE_DIAL;
+
+    //just one slot could be triggered at one time
+    if(mutexDial.tryLock())
+    {
+        if(currentStage > STAGE_NODE)
+        {
+            DEBUG_PRINTF("Warning: Invalid STAGE, change stage to STAGE_NODE(%d).", STAGE_NODE);
+            currentStage = STAGE_NODE;
+        }
+looper_stage_branch:
+        DEBUG_PRINTF("currentStage: %d.", currentStage);
+        /*begin dialing*/
+        switch(currentStage)
+        {
+        case STAGE_RESET:
+        {
+            if(gData.resetCnt > resetCnt++)
+            {
+                ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^RESET", STAGE_RESET, 2, 2);
+                //log reset
+                writeLogLTE(STAGE_LOG_COMMON, "reset");
+                DEBUG_PRINTF("wait reset for more than 10s...");
+                sleep(10);
+                //call back or kill itself and restart by sysinit:respawn service
+                DEBUG_PRINTF("reset done. Start check MT again.");
+                currentStage = STAGE_INITENV;
+                goto looper_stage_branch;
+            }else
+            {
+                currentStage = STAGE_RESULT_FAILED;
+                goto looper_stage_branch;
+            }
+        }
+        case STAGE_MODE_REFRESH:
+        {
+            currentMode = STAGE_MODE_REFRESH;
+        }
+        case STAGE_INITENV:
+        {
+            //init env
+            bzero(&dialingInfo, sizeof(dialingInfo_t));
+            initOutputFiles();
+            emit signalDisplay(STAGE_DISPLAY_INIT, QString());
+        }
+        case STAGE_DEFAULT:
+        {
+
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                notes = "Dialing start: ";
+                emit signalDisplay(STAGE_DEFAULT, QString("Dialing..."));
+            }else
+            {
+                notes = "Refresh env start: ";
+                emit signalDisplay(STAGE_DEFAULT, QString("Refresh..."));
+            }
+            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            //just log Dialing start
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                writeLogLTE(STAGE_LOG_COMMON, notes);
+            }
+            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
+            //check for the internet access before dialing
+            ret = checkInternetAccess(1);
+            if(!ret)
+            {
+                DEBUG_PRINTF("Net access is ok formerly.");
+                emit signalDisplay(STAGE_DISPLAY_NOTES, QString("Net access is ok formerly."));
+                if(STAGE_MODE_REFRESH != currentMode)
+                {
+                    currentStage = STAGE_RESULT_SUCCESS;
+                    goto looper_stage_branch;
+                }
+            }
+        }
+        case STAGE_NODE:
+        {
+            //0. get nodePath and access permission
+            ret = tryAccessDeviceNode(&fd, nodePath, sizeof(nodePath));
+            if(ret)
+            {
+                system("echo 'nodeviceNode' > /tmp/lte/devicenode");
+                emit signalDisplay(STAGE_NODE, QString("NOdeviceNode"));
+                currentStage = STAGE_RESULT_FAILED;
+                goto looper_stage_branch;
+            }else
+            {
+                QString cmd("echo ");
+                if(nodePath) cmd += QString(nodePath);
+                cmd += QString(" > /tmp/lte/devicenode");
+                system(cmd.toLocal8Bit().data());
+                DEBUG_PRINTF("cmd:%s.\n", cmd.toLocal8Bit().data());
+                emit signalDisplay(STAGE_NODE, QString(nodePath));
+            }
+        }
+        case STAGE_AT:
+        {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT", STAGE_AT, 2, 2);
+
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                if(ret)
+                {
+                    currentStage = STAGE_RESULT_FAILED;
+                    goto looper_stage_branch;
+                }else
+                {
+                    currentStage = STAGE_CPIN;
+                    goto looper_stage_branch;
+                }
+            }
+        }
+        case STAGE_SIMSWITCH:
+        {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH?", STAGE_SIMSWITCH, 2, 2);
+            DEBUG_PRINTF("switchCnt:%d", gData.switchCnt);
+            if(gData.switchCnt > switchCnt++)
+            {
+                if(STAGE_MODE_REFRESH != currentMode)
+                {
+                    DEBUG_PRINTF("try use \"AT^SIMSWITCH\" to enable SIM card...");
+                    DEBUG_PRINTF("currentSlot:%d.", dialingInfo.currentSlot);
+                    switch(dialingInfo.currentSlot)
+                    {
+                    case STAGE_SLOT_0:
+                    {
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=1", STAGE_PARSE_OFF, 2, 2);
+                        sleep(4);
+                        break;
+                    }
+                    case STAGE_SLOT_1:
+                    {
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", STAGE_PARSE_OFF, 2, 2);
+                        sleep(4);
+                        break;
+                    }
+                    default:
+                    {
+                        DEBUG_PRINTF("Don't know current SIMSWITCH CHANNEL. Change to channel 0.");
+                        sendCMDandCheckRecvMsg(fd, (char*)"AT^SIMSWITCH=0", STAGE_PARSE_OFF, 2, 2);
+                        sleep(4);
+                        break;
+                    }
+                    }
+                }
+            }else
+            {
+                DEBUG_PRINTF("Warning: \"AT^SIMSWITCH\" failed!");
+                /*
+                * switch doesn't work that have to reset the MT
+                * if MT hasn't been reset
+                */
+                currentStage = STAGE_RESET;
+                goto looper_stage_branch;
+            }
+        }
+        case STAGE_CPIN:
+        {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+CPIN?", STAGE_CPIN, 2, 2);
+            //after cpin&switch check, and go to switch again if it's not good
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                if(ret)
+                {
+                    currentStage = STAGE_SIMSWITCH;
+                    goto looper_stage_branch;
+                }
+            }
+        }
+        case STAGE_SYSINFOEX:
+        {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^SYSINFOEX", STAGE_SYSINFOEX, 2, 1);
+
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                if(ret)
+                {
+                    currentStage = STAGE_RESULT_FAILED;
+                    goto looper_stage_branch;
+                }
+            }
+        }
+        case STAGE_COPS:
+        {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT+COPS?", STAGE_COPS, 2, 2);
+
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                DEBUG_PRINTF("currentOperator:%d.", dialingInfo.currentOperator);
+                switch(dialingInfo.currentOperator)
+                {
+                case STAGE_OPERATOR_MOBILE:
+                {
+                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CMNET\"", STAGE_PARSE_SIMPLE, 2, 2))
+                    {
+                        DEBUG_PRINTF("CMCC dialing end.");
+                    }else
+                    {
+                        DEBUG_PRINTF("CMCC dialing failed. Or has been dialed success before.");
+                    }
+                    break;
+                }
+                case STAGE_OPERATOR_TELECOM:
+                {
+                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1,\"card\", \"card\"", NOTPARSEACK, 2, 2);//do not need this
+                    //sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=0,1", NOTPARSEACK, 2, 2);   //do not need this
+                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"CTNET\"", STAGE_PARSE_SIMPLE, 2, 2))
+                    {
+                        DEBUG_PRINTF("CH-T dialing end.");
+                    }else
+                    {
+                        DEBUG_PRINTF("CH-T dialing failed. Or has been dialed success before.");
+                    }
+                    break;
+                }
+                case STAGE_OPERATOR_UNICOM:
+                {
+                    if(!sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISDUP=1,1,\"3GNET\"", STAGE_PARSE_SIMPLE, 2, 2))
+                    {
+                        DEBUG_PRINTF("CH-U dialing end.");
+                    }else
+                    {
+                        DEBUG_PRINTF("CH-U dialing failed. Or has been dialed success before.");
+                    }
+                    break;
+                }
+                default:
+                {
+                    DEBUG_PRINTF("Didn't dialing at all.");
+                    ERR_RECORDER(NULL);
+                    break;
+                }
+                }
+            }
+        }
+        case STAGE_NDISSTATQRY:
+        {
+            ret = sendCMDandCheckRecvMsg(fd, (char*)"AT^NDISSTATQRY?", STAGE_NDISSTATQRY, 2, 2);
+        }
+        case STAGE_GET_SPECIAL_DATA_AFTER_DIAL:
+        {
+            //some need to known
+            sendCMDandCheckRecvMsg(fd, (char*)"AT+CSQ", STAGE_CSQ, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT^EONS=1", STAGE_EONS, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT+CCLK?", STAGE_CCLK, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT^CARDMODE", STAGE_CARDMODE, 2, 1);
+            sendCMDandCheckRecvMsg(fd, (char*)"AT^CHIPTEMP?", STAGE_CHIPTEMP, 2, 1);
+            if(1)//use iccid to refresh cnt data
+            {
+                if(strlen(dialingInfo.iccid.meAckMsg) > 0)
+                    strcpy(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg);
+                sendCMDandCheckRecvMsg(fd, (char*)"AT^ICCID?", STAGE_ICCID, 2, 1);
+#if 0
+                if((0 != strcmp(dialingInfo_tmp.iccid.meAckMsg, dialingInfo.iccid.meAckMsg)))
+                {
+                    DEBUG_PRINTF("Warning: new SIM card insert in the slot with a new iccid.");
+                    successCnt = 0;
+                    failedCnt = 0;
+                    emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(successCnt));
+                    emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(failedCnt));
+                }
+#endif
+            }
+        }
+        case STAGE_CHECK_PING:
+        {
+            ret = checkInternetAccess(1);
+        }
+        case STAGE_CHECK_IP:
+        {
+            if(ret)
+            {
+                ret = checkIP(1);
+            }else
+            {
+                ret = checkIP(0);
+            }
+
+            if(ret)
+            {
+                currentStage = STAGE_RESULT_FAILED;
+            }else
+            {
+                currentStage = STAGE_RESULT_SUCCESS;
+            }
+            goto looper_stage_branch;
+        }
+        case STAGE_RESULT_SUCCESS:
+        {
+            mutexInfo.lock();
+            dialingInfo.isDialedSuccess = STAGE_RESULT_SUCCESS;
+            mutexInfo.unlock();
+
+
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                gData.dialOkCnt++;
+                emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(gData.dialOkCnt));
+                notes = QString::number(gData.dialOkCnt);
+                notes += "Dialed end(success): ";
+            }else
+            {
+                gData.refreshOkCnt++;
+                emit signalDisplay(STAGE_DISPLAY_CNT_SUCCESS, QString::number(gData.refreshOkCnt));
+                notes = QString::number(gData.refreshOkCnt);
+                notes += "Refresh env end(success): ";
+            }
+            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            //just recorder dial succeed log
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                writeLogLTE(STAGE_LOG_COMMON, notes);
+            }
+            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
+
+            //first dial succeed. and got to refresh once for more info
+            if(1 == gData.dialOkCnt + gData.refreshOkCnt)
+            {
+                currentMode = STAGE_MODE_REFRESH;
+                currentStage = STAGE_NODE;
+                goto looper_stage_branch;
+            }
+
+            break;
+        }
+        case STAGE_RESULT_FAILED:
+        {
+            mutexInfo.lock();
+            dialingInfo.isDialedSuccess = STAGE_RESULT_FAILED;
+            mutexInfo.unlock();
+
+            if(STAGE_MODE_REFRESH != currentMode)
+            {
+                gData.dialFailCnt++;
+                emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(gData.dialFailCnt));
+                notes = QString::number(gData.dialFailCnt);
+                notes += "Dialed end(failed): ";
+            }else
+            {
+                gData.refreshFailCnt++;
+                notes = QString::number(gData.refreshFailCnt);
+                emit signalDisplay(STAGE_DISPLAY_CNT_FAILED, QString::number(gData.refreshFailCnt));
+                notes += "Refresh env end(failed): ";
+            }
+            notes += QDateTime::currentDateTime().toString("MM/dd[HH:mm:ss]");
+            writeLogLTE(STAGE_LOG_COMMON, notes);
+            emit signalDisplay(STAGE_DISPLAY_NOTES, notes);
+            break;
+        }
+        default:
+        {
+            DEBUG_PRINTF("UNKNOWN STAGE.");
+            emit signalDisplay(STAGE_DISPLAY_NOTES, QString("UNKNOWN STAGE."));
+            break;
+        }
+        }
+        exitSerialPortFromTtyLte(&fd);
+        /*end dialing*/
+        mutexDial.unlock();
+    }else
+    {
+        DEBUG_PRINTF("Warning: wouldn't exec! It isRunning formerly...");
+    }
+
     return ret;
 }
 
@@ -2160,9 +2220,6 @@ int threadDialing::getApnNodeListFromConfigFile(const char *xmlPath)
 
 void threadDialing::run()
 {
-    //create log file in the log dir
-    //this->createLogFile(NET_ACCESS_LOG_DIR);
-
     QObject::connect(&monitorTimer, &QTimer::timeout, this, &threadDialing::slotMonitorTimerHandler, Qt::QueuedConnection);
 
     monitorTimer.start();

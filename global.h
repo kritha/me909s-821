@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <signal.h>
 
-#define BOXV3CHECKAPP_VERSION "V0.9.2"
+#define BOXV3CHECKAPP_VERSION "V0.9.3"
 
 #define BOXV3_NODEPATH_LTE   "/dev/huawei_lte"
 #define BOXV3_NODEPATH_LENGTH   128
@@ -28,37 +28,41 @@
 
 #define APN_NODE_INFO_LEGNTH    64
 
-#define NET_ACCESS_LOG_DIR "/tmp/lte"
-#define NET_ACCESS_LOG_FILENAME "logLTE.txt"
+#define GLOBAL_LOG_FILEPATH "/opt/log"
+#define GLOBAL_LOG_FILENAME "dialLTE.txt"
+#define DIAL_RESULT_OUPUT_DIR "/tmp/lte"
 #define APNNODE_XML_CONFIG_FILE "/etc/dialLTE.config"
 
-#define TIMESPEND_WHOLE_DIALING   1      //s
+#define DIALING_INTERVEL    3      //s
+#define REFRESH_INTERVEL    7       //s
 
 //#define TIMEINTERVAL_LTE_NET_CHECK (1000*TIMESPEND_WHOLE_DIALING)     //ms
-#define MONITOR_TIMER_CHECK_INTERVAL    (1000*TIMESPEND_WHOLE_DIALING) //ms
+#define MONITOR_INTERVEL(sec)    (1000*sec) //ms
 #define MONITOR_TIMER_CHECK_SPECIAL_MULT    3
 #define TRY_COUNT_INFINITE_SIGN  (-8)
+#define DEFAULT_MAX_RESET_COUNT    0
+#define DEFAULT_MAX_SWITCH_SLOT_COUNT    2
 
 /*
  * Save __FILE__ ,__FUNCTION__, __LINE__, and err msg, when err occured.
 */
 #define ERR_RECORDER(notifyMsg) do{ \
-        bzero(&errInfo, sizeof(errInfo_t));\
-        errInfo.filep = (char*)__FILE__;\
-        errInfo.funcp = (char*)__func__;\
-        errInfo.line = __LINE__;\
+        bzero(&gData.errInfo, sizeof(errInfo_t));\
+        gData.errInfo.filep = (char*)__FILE__;\
+        gData.errInfo.funcp = (char*)__func__;\
+        gData.errInfo.line = __LINE__;\
         if(notifyMsg){\
-            strcpy(errInfo.errMsgBuf, NULL==notifyMsg?"\n":notifyMsg);\
+            strcpy(gData.errInfo.errMsgBuf, NULL==notifyMsg?"\n":notifyMsg);\
         }\
     }while(0)
 
 #define DEBUG_PRINTF(fmt, args...) printf("---debug---%s(line:%d)"fmt"\n", __func__, __LINE__, ##args)
 
 #define ERR_PRINTF(fmt, args...) do{ \
-    bzero(&errInfo, sizeof(errInfo_t));\
-    errInfo.filep = (char*)__FILE__;\
-    errInfo.funcp = (char*)__func__;\
-    errInfo.line = __LINE__;\
+    bzero(&gData.errInfo, sizeof(errInfo_t));\
+    gData.errInfo.filep = (char*)__FILE__;\
+    gData.errInfo.funcp = (char*)__func__;\
+    gData.errInfo.line = __LINE__;\
     printf("_Error_: %s(line:%d)"fmt"\n", __func__, __LINE__, ##args);\
 }while(0)
 
@@ -100,6 +104,8 @@ enum checkStageLTE{
     STAGE_RESULT_SUCCESS,
     STAGE_RESULT_FAILED,
     STAGE_RESULT_UNKNOWN,
+
+    STAGE_LOG_COMMON,
 
     STAGE_PARSE_SIMPLE,
     STAGE_PARSE_SPECIAL_SIMST,
@@ -170,6 +176,7 @@ typedef struct _dialingInfo{
 }dialingInfo_t;
 
 typedef struct _apnNodeInfo{
+    char isUsing;
     char apn[APN_NODE_INFO_LEGNTH];
     char name[APN_NODE_INFO_LEGNTH];
     char proxy[APN_NODE_INFO_LEGNTH];
@@ -185,25 +192,32 @@ typedef struct _apnNodeInfo{
     char mumeric[APN_NODE_INFO_LEGNTH];
     char type[APN_NODE_INFO_LEGNTH];
     char pingCheckDns[NET_ACCESS_CHECKPOINT_MAXCNT][APN_NODE_INFO_LEGNTH];
-
-    dialingBaseMsg_t imeiLastTime;//module serial number which was recorded last time
-    dialingBaseMsg_t iccidLastTime;//sim serial number which was recorded last time
-    int dialingCnt;
-    int refreshCnt;
-    int successCnt;
-    int failedCnt;
-    dialingInfo_t* dialingInfo;  //current base dialing info
     struct _apnNodeInfo* next;
 }apnNodeInfo_t;
 
-extern errInfo_t errInfo;
-extern int tryCount;
+typedef struct _globalData{
+    int monitorCnt;
+    int refreshIntervelMSec;
+    int dialIntervelMSec;
+    int dialOkCnt;
+    int dialFailCnt;
+    int refreshOkCnt;
+    int refreshFailCnt;
+    errInfo_t errInfo;
+    int tryCount;
+    int resetCnt;
+    int switchCnt;
+    apnNodeInfo_t* apnNodeListHead;
+    dialingInfo_t* dialingInfo;  //current base dialing info
+}globalData_t;
+
 
 #ifdef __cplusplus
 extern "C"{
 #endif
-
+extern globalData_t gData;
 extern void emergency_sighandler(int signum);
+extern void __attribute__((constructor)) initializer_before_main(void);
 #ifdef __cplusplus
 }
 #endif

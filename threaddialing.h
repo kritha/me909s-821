@@ -46,7 +46,8 @@ public:
     void exitSerialPortFromTtyLte(int* fd);
 
 
-    void createOutputFile(void);
+    void initOutputFiles(void);
+    void clearSimStatesOfOutputFiles(char simSt = 0);
     int parseConfigFile(char *nodePath, int bufLen, char* key);
     int tryBestToCleanSerialIO(int fd);
     int sendCMDandCheckRecvMsg(int fd, char *cmd, checkStageLTE key, int retryCnt, int RDndelay);
@@ -59,14 +60,14 @@ public:
     int checkInternetAccess(char emergencyFlag = 0);
     int getNativeNetworkInfo(QString ifName, QString &ipString);
     void showDialingResult(dialingInfo_t& info);
-public slots:
-    int slotMonitorTimerHandler(void);
-    int slotRunDialing(checkStageLTE currentStage = STAGE_DEFAULT);
-private:
+
     int createLogFile(QString dirFullPath);
-    int writeLogLTE(checkStageLTE c);
+    int writeLogLTE(checkStageLTE c, QString logStr=QString());
     int tryCreateDefaultXMLConfigFile(const char* xmlPath);
     int queryWholeXMLConfigFile(const char* xmlPath);
+public slots:
+    int slotMonitorTimerHandler(void);
+    int slotRunDialing(checkStageLTE currentStage = STAGE_INITENV);
 signals:
     void signalDisplay(char stage, QString result);
 protected:
